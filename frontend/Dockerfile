@@ -1,7 +1,13 @@
-frontend/Dockerfile
+FROM node:22
 
-FROM node:18
 WORKDIR /app
-COPY . .
+
+COPY package*.json ./
+
 RUN npm install
-CMD ["npm", "start"]
+
+COPY . .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

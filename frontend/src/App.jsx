@@ -1,58 +1,122 @@
-import { useEffect, useState } from "react";
-import axios from "axios";
+import { useState } from 'react'
+import reactLogo from './assets/react.svg'
+import viteLogo from './assets/vite.svg'
+import heroImg from './assets/hero.png'
+import './App.css'
 
-export default function App() {
-  const [cluster, setCluster] = useState({});
-  const [nodeId, setNodeId] = useState("");
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("");
-
-  const fetchCluster = async () => {
-    const res = await axios.get("http://localhost:8000/cluster");
-    setCluster(res.data);
-  };
-
-  useEffect(() => {
-    fetchCluster();
-  }, []);
-
-  const addNode = async () => {
-    await axios.post("http://localhost:8000/node/add", { id: nodeId });
-    fetchCluster();
-  };
-
-  const writeData = async () => {
-    await axios.post("http://localhost:8000/data/write", { key, value });
-    fetchCluster();
-  };
+function App() {
+  const [count, setCount] = useState(0)
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Cassandra Simulator</h1>
+    <>
+      <section id="center">
+        <div className="hero">
+          <img src={heroImg} className="base" width="170" height="179" alt="" />
+          <img src={reactLogo} className="framework" alt="React logo" />
+          <img src={viteLogo} className="vite" alt="Vite logo" />
+        </div>
+        <div>
+          <h1>Get started</h1>
+          <p>
+            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+          </p>
+        </div>
+        <button
+          type="button"
+          className="counter"
+          onClick={() => setCount((count) => count + 1)}
+        >
+          Count is {count}
+        </button>
+      </section>
 
-      <div>
-        <input placeholder="Node ID" onChange={(e) => setNodeId(e.target.value)} />
-        <button onClick={addNode}>Add Node</button>
-      </div>
+      <div className="ticks"></div>
 
-      <div>
-        <input placeholder="Key" onChange={(e) => setKey(e.target.value)} />
-        <input placeholder="Value" onChange={(e) => setValue(e.target.value)} />
-        <button onClick={writeData}>Write Data</button>
-      </div>
+      <section id="next-steps">
+        <div id="docs">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#documentation-icon"></use>
+          </svg>
+          <h2>Documentation</h2>
+          <p>Your questions, answered</p>
+          <ul>
+            <li>
+              <a href="https://vite.dev/" target="_blank">
+                <img className="logo" src={viteLogo} alt="" />
+                Explore Vite
+              </a>
+            </li>
+            <li>
+              <a href="https://react.dev/" target="_blank">
+                <img className="button-icon" src={reactLogo} alt="" />
+                Learn more
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div id="social">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#social-icon"></use>
+          </svg>
+          <h2>Connect with us</h2>
+          <p>Join the Vite community</p>
+          <ul>
+            <li>
+              <a href="https://github.com/vitejs/vite" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#github-icon"></use>
+                </svg>
+                GitHub
+              </a>
+            </li>
+            <li>
+              <a href="https://chat.vite.dev/" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#discord-icon"></use>
+                </svg>
+                Discord
+              </a>
+            </li>
+            <li>
+              <a href="https://x.com/vite_js" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#x-icon"></use>
+                </svg>
+                X.com
+              </a>
+            </li>
+            <li>
+              <a href="https://bsky.app/profile/vite.dev" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#bluesky-icon"></use>
+                </svg>
+                Bluesky
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
 
-      <h2>Cluster</h2>
-      <div style={{ display: "flex", gap: 20 }}>
-        {Object.entries(cluster).map(([node, data]) => (
-          <div key={node} style={{ border: "1px solid black", padding: 10 }}>
-            <h3>{node}</h3>
-            {data.map((d, i) => (
-              <div key={i}>{d.key}: {d.value}</div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+      <div className="ticks"></div>
+      <section id="spacer"></section>
+    </>
+  )
 }
 
+export default App
