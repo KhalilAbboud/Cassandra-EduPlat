@@ -1,12 +1,23 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import hashlib
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# In-memory cluster simulation
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory cluster
 cluster = {}
-replication_factor = 2
+def get_replication_factor():
+    return min(2, len(cluster))
 
 class Node(BaseModel):
     id: str
@@ -15,48 +26,84 @@ class DataItem(BaseModel):
     key: str
     value: str
 
+
+# ---------- NODE MANAGEMENT ----------
+
 @app.post("/node/add")
 def add_node(node: Node):
-    cluster[node.id] = []
+    if node.id not in cluster:
+        cluster[node.id] = []
     return {"message": f"Node {node.id} added"}
+
 
 @app.delete("/node/remove/{node_id}")
 def remove_node(node_id: str):
-    if node_id in cluster:
-        del cluster[node_id]
-        return {"message": f"Node {node_id} removed"}
-    return {"error": "Node not found"}
+    cluster.pop(node_id, None)
+    return {"message": f"Node {node_id} removed"}
+
 
 @app.get("/cluster")
 def get_cluster():
     return cluster
 
-# Simple hash-based partitioning
+
+# ---------- PARTITIONING ----------
 
 def get_node_for_key(key: str):
     if not cluster:
         return []
+
     nodes = sorted(cluster.keys())
     h = int(hashlib.md5(key.encode()).hexdigest(), 16)
     idx = h % len(nodes)
+
+    replication_factor = get_replication_factor()
+
     selected = []
     for i in range(replication_factor):
         selected.append(nodes[(idx + i) % len(nodes)])
+
     return selected
+
+
+# ---------- DATA ----------
 
 @app.post("/data/write")
 def write_data(item: DataItem):
     nodes = get_node_for_key(item.key)
+
     for n in nodes:
+        if n not in cluster:
+            continue
         cluster[n].append({"key": item.key, "value": item.value})
+
     return {"replicated_to": nodes}
+
 
 @app.get("/data/read/{key}")
 def read_data(key: str):
     nodes = get_node_for_key(key)
     results = []
+
     for n in nodes:
+        found_value = None
+
         for item in cluster[n]:
             if item["key"] == key:
-                results.append({"node": n, "value": item["value"]})
+                found_value = item["value"]
+                break
+
+        results.append({
+            "node": n,
+            "key": key,
+            "value": found_value
+        })
+
     return results
+
+
+# ---------- ROOT ----------
+
+@app.get("/")
+def root():
+    return {"message": "Backend running"}
