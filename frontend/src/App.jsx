@@ -12,6 +12,9 @@ function App() {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [output, setOutput] = useState(null);
+  const [nodeStatus, setNodeStatus] = useState(null);
+  const [clusterStatus, setClusterStatus] = useState(null);
+  const [deleteKey, setDeleteKey] = useState("");
 
   return (
     <div style={{ padding: 20 }}>
@@ -61,6 +64,40 @@ function App() {
       {/* Output */}
       <h2>Output</h2>
       <pre>{JSON.stringify(output, null, 2)}</pre>
+
+      <h2>Node Health</h2>
+      <input
+        placeholder="Node ID"
+        value={nodeId}
+        onChange={(e) => setNodeId(e.target.value)}
+      />
+
+      <button
+        onClick={() =>
+          getNodeHealth(nodeId).then(setNodeStatus).catch(setNodeStatus)
+        }
+      >
+        Check Node
+      </button>
+      <pre>{JSON.stringify(nodeStatus, null, 2)}</pre>
+
+      <h2>Cluster Status</h2>
+      <button onClick={() => getClusterStatus().then(setClusterStatus)}>
+        Refresh Cluster Status
+      </button>
+      <pre>{JSON.stringify(clusterStatus, null, 2)}</pre>
+
+      <h2>Delete Data</h2>
+      <input
+        placeholder="Key to delete"
+        value={deleteKey}
+        onChange={(e) => setDeleteKey(e.target.value)}
+      />
+
+      <button onClick={() => deleteData(deleteKey).then(setOutput)}>
+        Delete
+      </button>
+      
     </div>
   );
 }
