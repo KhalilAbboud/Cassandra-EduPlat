@@ -5,99 +5,115 @@ import {
   writeData,
   readData,
   getCluster,
+  getNodeHealth,
+  getClusterStatus,
+  deleteData,
 } from "./services/api";
+import TokenRing from "./components/TokenRing";
+import "./App.css";
 
 function App() {
   const [nodeId, setNodeId] = useState("");
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
+  const [deleteKey, setDeleteKey] = useState("");
+
   const [output, setOutput] = useState(null);
   const [nodeStatus, setNodeStatus] = useState(null);
   const [clusterStatus, setClusterStatus] = useState(null);
-  const [deleteKey, setDeleteKey] = useState("");
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Cassandra Simulator</h1>
+    <div className="app-container">
+      <h1 className="app-title">CassandraEdu Simulator</h1>
 
-      {/* Node controls */}
-      <h2>Nodes</h2>
-      <input
-        placeholder="Node ID"
-        value={nodeId}
-        onChange={(e) => setNodeId(e.target.value)}
-      />
-      <button onClick={() => addNode(nodeId).then(setOutput)}>
-        Add Node
-      </button>
-      <button onClick={() => removeNode(nodeId).then(setOutput)}>
-        Remove Node
-      </button>
+      <div className="app-layout">
 
-      {/* Data controls */}
-      <h2>Data</h2>
-      <input
-        placeholder="Key"
-        value={key}
-        onChange={(e) => setKey(e.target.value)}
-      />
-      <input
-        placeholder="Value"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-      />
+        {/* LEFT PANEL */}
+        <div className="panel">
+          <h2>Control Panel</h2>
 
-      <button onClick={() => writeData(key, value).then(setOutput)}>
-        Write
-      </button>
+          <h3>Nodes</h3>
+          <input
+            placeholder="Node ID"
+            value={nodeId}
+            onChange={(e) => setNodeId(e.target.value)}
+          />
+          <button onClick={() => addNode(nodeId).then(setOutput)}>
+            Add Node
+          </button>
+          <button onClick={() => removeNode(nodeId).then(setOutput)}>
+            Remove Node
+          </button>
 
-      <button onClick={() => readData(key).then(setOutput)}>
-        Read
-      </button>
+          <h3>Data</h3>
+          <input
+            placeholder="Key"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <input
+            placeholder="Value"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <button onClick={() => writeData(key, value).then(setOutput)}>
+            Write
+          </button>
+          <button onClick={() => readData(key).then(setOutput)}>
+            Read
+          </button>
 
-      {/* Cluster */}
-      <h2>Cluster</h2>
-      <button onClick={() => getCluster().then(setOutput)}>
-        Show Cluster
-      </button>
+          <h3>Cluster</h3>
+          <button onClick={() => getCluster().then(setOutput)}>
+            Show Cluster
+          </button>
 
-      {/* Output */}
-      <h2>Output</h2>
-      <pre>{JSON.stringify(output, null, 2)}</pre>
+          <h3>Node Health</h3>
+          <button
+            onClick={() =>
+              getNodeHealth(nodeId)
+                .then(setNodeStatus)
+                .catch(setNodeStatus)
+            }
+          >
+            Check Node
+          </button>
 
-      <h2>Node Health</h2>
-      <input
-        placeholder="Node ID"
-        value={nodeId}
-        onChange={(e) => setNodeId(e.target.value)}
-      />
+          <h3>Cluster Status</h3>
+          <button onClick={() => getClusterStatus().then(setClusterStatus)}>
+            Refresh Cluster Status
+          </button>
 
-      <button
-        onClick={() =>
-          getNodeHealth(nodeId).then(setNodeStatus).catch(setNodeStatus)
-        }
-      >
-        Check Node
-      </button>
-      <pre>{JSON.stringify(nodeStatus, null, 2)}</pre>
+          <h3>Delete Data</h3>
+          <input
+            placeholder="Key to delete"
+            value={deleteKey}
+            onChange={(e) => setDeleteKey(e.target.value)}
+          />
+          <button onClick={() => deleteData(deleteKey).then(setOutput)}>
+            Delete
+          </button>
+        </div>
 
-      <h2>Cluster Status</h2>
-      <button onClick={() => getClusterStatus().then(setClusterStatus)}>
-        Refresh Cluster Status
-      </button>
-      <pre>{JSON.stringify(clusterStatus, null, 2)}</pre>
+        {/* RIGHT PANEL */}
+        <div className="panel">
+          <h2>Token Ring Visualization</h2>
 
-      <h2>Delete Data</h2>
-      <input
-        placeholder="Key to delete"
-        value={deleteKey}
-        onChange={(e) => setDeleteKey(e.target.value)}
-      />
+          <div className="ring-box">
+            <TokenRing />
+          </div>
 
-      <button onClick={() => deleteData(deleteKey).then(setOutput)}>
-        Delete
-      </button>
-      
+          <h3>Output</h3>
+          <pre>{JSON.stringify(output, null, 2)}</pre>
+
+          <h3>Node Status</h3>
+          <pre>{JSON.stringify(nodeStatus, null, 2)}</pre>
+
+          <h3>Cluster Status</h3>
+          <pre>{JSON.stringify(clusterStatus, null, 2)}</pre>
+        </div>
+
+      </div>
     </div>
   );
 }
