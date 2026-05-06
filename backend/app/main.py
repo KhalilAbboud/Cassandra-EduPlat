@@ -1,7 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, Form
 from pydantic import BaseModel
 import hashlib
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import UploadFile, File
+import csv
+import io
 
 app = FastAPI()
 
@@ -23,6 +26,10 @@ class Node(BaseModel):
     id: str
 
 class DataItem(BaseModel):
+    key: str
+    value: str
+
+class CsvImportRow(BaseModel):
     key: str
     value: str
 
@@ -126,6 +133,98 @@ def delete_data(key: str):
 
     return {"message": "Data deleted", "replicated_from": nodes}
 
+
+# ---------- CSV IMPORT ----------
+
+@app.post("/data/import_csv")
+async def import_csv(
+    file: UploadFile = File(...),
+    has_header: bool = Form(True),
+    column_names: str = Form(""),   # e.g. "ID;firstname;lastname;status"
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="CSV file is required")
+
+    content = await file.read()
+    try:
+        decoded = content.decode("utf-8-sig")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to decode CSV as UTF-8")
+
+    lines = [ln for ln in decoded.splitlines() if ln.strip() != ""]
+    if not lines:
+        raise HTTPException(status_code=400, detail="No valid rows found in CSV")
+
+    first_line = lines[0]
+    delimiter = ";"
+    if "," in first_line and ";" not in first_line:
+        delimiter = ","
+    elif "," in first_line and ";" in first_line:
+        delimiter = ","
+
+    reader = csv.reader(io.StringIO(decoded), delimiter=delimiter)
+    all_rows = [row for row in reader if row and not all(c.strip() == "" for c in row)]
+
+    if not all_rows:
+        raise HTTPException(status_code=400, detail="No valid rows found in CSV")
+
+    # Resolve header column names
+    if has_header:
+        header_cols = [c.strip() for c in all_rows[0]]
+        data_rows = all_rows[1:]
+    else:
+        data_rows = all_rows
+        if column_names.strip():
+            sep = ";" if ";" in column_names else ","
+            header_cols = [c.strip() for c in column_names.split(sep)]
+        else:
+            # Auto-generate from width of first data row
+            width = len(data_rows[0]) if data_rows else 1
+            header_cols = [f"col{i + 1}" for i in range(width)]
+
+    rows: list[CsvImportRow] = []
+    skipped = 0
+    for row in data_rows:
+        c0 = row[0].strip() if row else ""
+        if not c0:
+            skipped += 1
+            continue
+        rest = [c.strip() for c in row[1:]]
+        rows.append(CsvImportRow(key=c0, value=delimiter.join(rest)))
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid rows found in CSV")
+
+    table_name = (file.filename or "ImportedTable").rsplit(".", 1)[0] or "ImportedTable"
+    table_rows: dict[str, dict[str, str]] = {}
+    nodes_touched: dict[str, int] = {}
+
+    for r in rows:
+        nodes = get_node_for_key(r.key)
+        for n in nodes:
+            if n not in cluster:
+                continue
+            cluster[n].append({"key": r.key, "value": r.value})
+            nodes_touched[n] = nodes_touched.get(n, 0) + 1
+
+        row_id = f"row{r.key}" if r.key.isdigit() else r.key
+        rest_cols = r.value.split(delimiter) if r.value else []
+
+        key_col_name = header_cols[0] if header_cols else "key"
+        row_obj: dict[str, str] = {key_col_name: r.key}
+        for idx, col_val in enumerate(rest_cols):
+            col_name = header_cols[idx + 1] if (idx + 1) < len(header_cols) else f"col{idx + 1}"
+            row_obj[col_name] = col_val
+
+        table_rows[row_id] = row_obj
+
+    return {
+        "message": "CSV imported",
+        "rows_imported": len(rows),
+        "rows_skipped": skipped,
+        "replicated_counts_per_node": nodes_touched,
+        "table": {table_name: table_rows},
+    }
 
 # ---------- ROOT ----------
 
