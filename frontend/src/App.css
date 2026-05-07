@@ -16,9 +16,21 @@ body {
 
 .app-layout {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  grid-template-columns: 380px 1fr;
   gap: 25px;
   margin-top: 30px;
+  align-items: start;
+}
+
+.panel:first-child {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+
+.panel:last-child {
+  overflow: visible;
 }
 
 .panel {
@@ -28,6 +40,7 @@ body {
   background: var(--bg);
   box-shadow: var(--shadow);
   text-align: left;
+  overflow: visible;
 }
 
 input {
@@ -55,13 +68,24 @@ button:hover {
 }
 
 .ring-box {
-  height: 320px;
+  min-height: 620px;
+  width: 100%;
   border: 2px dashed var(--border);
-  border-radius: 12px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 15px;
+  padding: 25px;
+  margin-bottom: 20px;
+  overflow: visible;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.token-ring {
+  width: 100%;
+  height: auto;
+  overflow: visible;
 }
 
 pre {
@@ -69,4 +93,310 @@ pre {
   padding: 15px;
   border-radius: 8px;
   overflow-x: auto;
+}
+
+select {
+  display: block;
+  width: 100%;
+  margin: 8px 0 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.educational-box {
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--accent-bg);
+  margin-bottom: 20px;
+}
+
+.educational-box p {
+  margin: 8px 0;
+}
+
+.educational-box h4 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  color: var(--text-h);
+}
+
+.educational-box ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.educational-box li {
+  margin: 6px 0;
+}
+
+.panel h3 {
+  margin-top: 24px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-h);
+}
+
+.panel h4 {
+  color: var(--text-h);
+}
+
+label {
+  display: block;
+  margin-top: 10px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.node-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.simulation-button {
+  width: 100%;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.success-text {
+  color: #16a34a;
+}
+
+.failed-text {
+  color: #dc2626;
+}
+
+.token-ring {
+  max-width: 100%;
+}
+
+.ring-node {
+  fill: var(--bg);
+  stroke: var(--accent-border);
+  stroke-width: 3;
+}
+
+.primary-node {
+  fill: rgba(59, 130, 246, 0.25);
+  stroke: #3b82f6;
+  stroke-width: 4;
+}
+
+.replica-node {
+  fill: rgba(34, 197, 94, 0.2);
+  stroke: #22c55e;
+}
+
+.down-node {
+  fill: rgba(239, 68, 68, 0.18);
+  stroke: #ef4444;
+  opacity: 0.7;
+}
+
+.down-cross {
+  stroke: #ef4444;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.ring-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.token-label {
+  fill: var(--text);
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.hash-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 3;
+}
+
+.hash-label {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-center-title {
+  fill: var(--text-h);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.ring-center-subtitle {
+  fill: var(--text);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ring-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.token-ring {
+  max-width: 100%;
+}
+
+.ownership-arc {
+  fill: none;
+  stroke-width: 12;
+  opacity: 0.28;
+}
+
+.ownership-0 {
+  stroke: #60a5fa;
+}
+
+.ownership-1 {
+  stroke: #34d399;
+}
+
+.ownership-2 {
+  stroke: #fbbf24;
+}
+
+.clockwise-arrow {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5;
+}
+
+.arrow-head {
+  fill: var(--accent);
+}
+
+.clockwise-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-node {
+  fill: var(--bg);
+  stroke: var(--accent-border);
+  stroke-width: 3;
+}
+
+.primary-node {
+  fill: rgba(59, 130, 246, 0.35);
+  stroke: #3b82f6;
+  stroke-width: 5;
+}
+
+.replica-node {
+  fill: rgba(34, 197, 94, 0.25);
+  stroke: #22c55e;
+}
+
+.down-node {
+  fill: rgba(239, 68, 68, 0.2);
+  stroke: #ef4444;
+  opacity: 0.75;
+}
+
+.down-cross {
+  stroke: #ef4444;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.ring-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.token-label {
+  fill: var(--text);
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.csv-data-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 2;
+}
+
+.csv-data-label {
+  fill: var(--text-h);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.manual-hash-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 3;
+}
+
+.hash-label {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-center-title {
+  fill: var(--text-h);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.ring-center-subtitle {
+  fill: var(--text);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ring-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.ring-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.yellow {
+  background: #facc15;
+}
+
+.dot.blue {
+  background: #3b82f6;
+}
+
+.dot.green {
+  background: #22c55e;
+}
+
+.dot.red {
+  background: #ef4444;
 }

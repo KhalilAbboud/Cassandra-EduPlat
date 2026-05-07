@@ -13,6 +13,11 @@ import {
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
 import "./App.css";
+import {
+  simulatePlacement,
+  checkConsistency,
+  hashKey,
+} from "./utils/cassandraSimulation";
 
 function App() {
   const [nodeId, setNodeId] = useState("");
@@ -26,6 +31,8 @@ function App() {
 
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreviewRows, setCsvPreviewRows] = useState([]);
+  const [csvColumns, setCsvColumns] = useState([]);
+  const [partitionKey, setPartitionKey] = useState("");
   const [csvError, setCsvError] = useState("");
   const [csvImportResult, setCsvImportResult] = useState(null);
   const [csvHasHeader, setCsvHasHeader] = useState(true);
@@ -37,6 +44,49 @@ function App() {
     const values = Object.values(replicatedCountsPerNode);
     return values.length ? Math.max(...values) : 0;
   }, [replicatedCountsPerNode]);
+
+  const [simulatedNodes, setSimulatedNodes] = useState([
+    { id: "NodeA", token: 3000, status: "up" },
+    { id: "NodeB", token: 6500, status: "up" },
+    { id: "NodeC", token: 9000, status: "up" },
+  ]);
+
+  const [replicationFactor, setReplicationFactor] = useState(2);
+  const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
+  const [simulationResult, setSimulationResult] = useState(null);
+  const [consistencyResult, setConsistencyResult] = useState(null);
+  const [csvDistribution, setCsvDistribution] = useState([]);
+
+
+
+  const toggleNodeStatus = (nodeId) => {
+    setSimulatedNodes((prev) =>
+      prev.map((node) =>
+        node.id === nodeId
+          ? { ...node, status: node.status === "up" ? "down" : "up" }
+          : node
+      )
+    );
+  };
+
+  const runEducationalSimulation = () => {
+    const result = simulatePlacement({
+      key,
+      nodes: simulatedNodes,
+      replicationFactor,
+    });
+
+    setSimulationResult(result);
+
+    if (result?.replicas) {
+      const consistency = checkConsistency({
+        replicas: result.replicas,
+        consistencyLevel,
+      });
+
+      setConsistencyResult(consistency);
+    }
+  };
 
   return (
     <div className="app-container">
@@ -101,6 +151,40 @@ function App() {
           </button>
 
 
+          <h3>Educational Simulation</h3>
+
+          <label>Replication Factor</label>
+          <select
+            value={replicationFactor}
+            onChange={(e) => setReplicationFactor(Number(e.target.value))}
+          >
+            <option value={1}>RF = 1</option>
+            <option value={2}>RF = 2</option>
+            <option value={3}>RF = 3</option>
+          </select>
+
+          <label>Consistency Level</label>
+          <select
+            value={consistencyLevel}
+            onChange={(e) => setConsistencyLevel(e.target.value)}
+          >
+            <option value="ONE">ONE</option>
+            <option value="QUORUM">QUORUM</option>
+            <option value="ALL">ALL</option>
+          </select>
+
+          <button className="simulation-button" onClick={runEducationalSimulation}>
+            Simulate Cassandra Write
+          </button>
+
+          <h4>Node Failure Simulation</h4>
+
+          {simulatedNodes.map((node) => (
+            <button key={node.id} onClick={() => toggleNodeStatus(node.id)}>
+              {node.status === "up" ? "Disable" : "Enable"} {node.id}
+            </button>
+          ))}
+
           <h3>CSV Import</h3>
           <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
             <input
@@ -160,6 +244,8 @@ function App() {
                   headers = Array.from({ length: width }, (_, i) => `col${i + 1}`);
                 }
               }
+              setCsvColumns(headers);
+              setPartitionKey(headers[0] ?? "");
 
               const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
               const tableRows = {};
@@ -183,14 +269,105 @@ function App() {
             }}
           />
 
+          {csvColumns.length > 0 && (
+            <>
+              <h4>Choose Partition Key</h4>
+
+              <select
+                value={partitionKey}
+                onChange={(e) => setPartitionKey(e.target.value)}
+              >
+                {csvColumns.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
           <button
             onClick={async () => {
-              if (!csvFile) { setCsvError("Please choose a CSV file first."); return; }
+              if (!csvFile) {
+                setCsvError("Please choose a CSV file first.");
+                return;
+              }
+
+              if (!partitionKey) {
+                setCsvError("Please choose a partition key.");
+                return;
+              }
+
               setCsvError("");
+
               try {
-                const res = await importCsv(csvFile, csvHasHeader, csvColumnNames);
-                setCsvImportResult(res);
-                setOutput(res);
+                const text = await csvFile.text();
+                const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+
+                const firstLine = lines[0];
+                const delimiter =
+                  firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
+
+                let headers = [];
+                let dataLines = [];
+
+                if (csvHasHeader) {
+                  headers = firstLine.split(delimiter).map((c) => c.trim());
+                  dataLines = lines.slice(1);
+                } else {
+                  dataLines = lines;
+
+                  if (csvColumnNames.trim()) {
+                    const sep = csvColumnNames.includes(";") ? ";" : ",";
+                    headers = csvColumnNames.split(sep).map((c) => c.trim());
+                  } else {
+                    const width = lines[0].split(delimiter).length;
+                    headers = Array.from({ length: width }, (_, i) => `col${i + 1}`);
+                  }
+                }
+
+                const table = {};
+                const distribution = [];
+
+                dataLines.forEach((line, index) => {
+                  const parts = line.split(delimiter).map((c) => c.trim());
+
+                  const row = {};
+                  headers.forEach((header, idx) => {
+                    row[header] = parts[idx] ?? "";
+                  });
+
+                  const rowId = `row${index + 1}`;
+                  table[rowId] = row;
+
+                  const partitionValue = row[partitionKey];
+
+                  if (!partitionValue) return;
+
+                  const placement = simulatePlacement({
+                    key: String(partitionValue),
+                    nodes: simulatedNodes,
+                    replicationFactor,
+                  });
+
+                  distribution.push({
+                    rowId,
+                    partitionValue,
+                    hash: placement?.hash,
+                    primaryNode: placement?.primaryNode?.id,
+                    replicas: placement?.replicas ?? [],
+                  });
+                });
+
+                const localResult = {
+                  table,
+                  rows_imported: Object.keys(table).length,
+                  rows_skipped: 0,
+                };
+
+                setCsvImportResult(localResult);
+                setOutput(localResult);
+                setCsvDistribution(distribution);
               } catch (e) {
                 setCsvError(e?.message ?? "CSV import failed");
               }
@@ -225,9 +402,72 @@ function App() {
         <div className="panel">
           <h2>Token Ring Visualization</h2>
 
+          {/* token ring */}
           <div className="ring-box">
-            <TokenRing />
+            <TokenRing
+              nodes={simulatedNodes}
+              simulationResult={simulationResult}
+              csvDistribution={csvDistribution}
+            />
           </div>
+          <h3>Educational Explanation</h3>
+
+          {simulationResult ? (
+            <div className="educational-box">
+              <p>
+                <strong>Key:</strong> {simulationResult.key}
+              </p>
+
+              <p>
+                <strong>Hash:</strong> {simulationResult.hash}
+              </p>
+
+              <p>
+                <strong>Primary Replica:</strong>{" "}
+                {simulationResult.primaryNode?.id ?? "None"}
+              </p>
+
+              <h4>Replicas</h4>
+
+              <ul>
+                {simulationResult.replicas.map((node, index) => (
+                  <li key={node.id}>
+                    {index === 0 ? "Primary" : "Replica"}: {node.id}
+                  </li>
+                ))}
+              </ul>
+
+              {consistencyResult && (
+                <>
+                  <h4>Consistency Level</h4>
+
+                  <p>
+                    CL {consistencyResult.consistencyLevel} requires{" "}
+                    {consistencyResult.required} replica response(s).
+                  </p>
+
+                  <p>
+                    Alive replicas:
+                    {" "}
+                    {consistencyResult.aliveReplicas}/
+                    {consistencyResult.required}
+                  </p>
+
+                  <p>
+                    <strong>
+                      {consistencyResult.success
+                        ? "WRITE SUCCESS"
+                        : "WRITE FAILED"}
+                    </strong>
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <p>
+              Insert a key and run the educational simulation.
+            </p>
+          )}
 
           <h3>CSV Visualization (replication distribution)</h3>
           <div style={{ display: "grid", gap: "10px" }}>
@@ -277,5 +517,6 @@ function App() {
     </div>
   );
 }
+
 
 export default App;
