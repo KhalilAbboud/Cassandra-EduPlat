@@ -55,3 +55,26 @@ export async function deleteData(key) {
   });
   return res.json();
 }
+
+export async function importCsv(file, hasHeader = true, columnNames = "") {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("has_header", String(hasHeader));
+  formData.append("column_names", columnNames);
+
+  const res = await fetch(`${API_BASE}/data/import_csv`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail = null;
+    try {
+      const data = await res.json();
+      detail = data?.detail ?? null;
+    } catch { /* ignore */ }
+    throw new Error(detail ? `CSV import failed: ${detail}` : "CSV import failed");
+  }
+
+  return res.json();
+}
