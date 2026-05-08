@@ -15,7 +15,7 @@ def create_node(payload: NodeCreate) -> NodeResponse:
     containers = get_nodes_in_network(payload.cluster_name)
     expected = len(containers)
     
-    print(f"⏳ Waiting for {expected} UN nodes...")
+    print(f"Waiting for {expected} UN nodes...")
     wait_until_up(container, payload.name, expected_un_count=expected)
     
     container.reload()

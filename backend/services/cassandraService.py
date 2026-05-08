@@ -35,7 +35,7 @@ def get_session(cluster_name: str):
         raise Exception(f"No running nodes found for cluster '{cluster_name}'")
 
     first_port = contact_points[0]
-    print(f"🔌 Connecting to {cluster_name} via 127.0.0.1:{first_port}")
+    print(f"Connecting to {cluster_name} via 127.0.0.1:{first_port}")
 
     cluster = Cluster(
         contact_points=["127.0.0.1"],
@@ -76,7 +76,7 @@ def create_keyspace(
         """
 
     session.execute(cql)
-    print(f"✅ Keyspace '{keyspace_name}' created")
+    print(f"Keyspace '{keyspace_name}' created")
     return {"keyspace": keyspace_name, "strategy": strategy, "replication_factor": replication_factor}
 
 
@@ -118,7 +118,7 @@ def create_table(
     """
 
     session.execute(cql)
-    print(f"✅ Table '{keyspace_name}.{table_name}' created")
+    print(f"Table '{keyspace_name}.{table_name}' created")
     return {
         "keyspace": keyspace_name,
         "table": table_name,
@@ -165,7 +165,7 @@ def insert_data(
         statement = SimpleStatement(cql, consistency_level=consistency)
         session.execute(statement, values)
 
-        print(f"✅ Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
+        print(f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
         return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
     except Unavailable as e:
         raise HTTPException(
@@ -219,7 +219,7 @@ def select_data(
         rows = session.execute(statement, values)
 
         result = [dict(row._asdict()) for row in rows]
-        print(f"📖 Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
+        print(f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
         return result
     except Unavailable as e:
         raise HTTPException(

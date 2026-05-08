@@ -23,14 +23,14 @@ def add_cluster(cluster_name: str, partitioner: str, nodes: list[str]):
         "created_at": datetime.now().isoformat()
     }
     write_registry(registry)
-    print(f"📝 Cluster '{cluster_name}' saved to registry")
+    print(f"Cluster '{cluster_name}' saved to registry")
 
 def remove_cluster(cluster_name: str):
     registry = read_registry()
     if cluster_name in registry:
         del registry[cluster_name]
         write_registry(registry)
-        print(f"🗑️ Cluster '{cluster_name}' removed from registry")
+        print(f"Cluster '{cluster_name}' removed from registry")
 
 def get_cluster(cluster_name: str) -> dict | None:
     registry = read_registry()
