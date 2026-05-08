@@ -1,6 +1,7 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import Literal, Optional
+from models.keyspace import KeyspaceCreate, KeyspaceResponse
+from models.table import TableCreate, TableResponse
+from models.data import InsertData, SelectData
 from services.cassandraService import (
     create_keyspace, list_keyspaces,
     create_table, list_tables,
@@ -9,34 +10,9 @@ from services.cassandraService import (
 
 router = APIRouter(prefix="/data", tags=["Data"])
 
-ConsistencyType = Literal["ONE", "QUORUM", "ALL"]
-StrategyType = Literal["SimpleStrategy", "NetworkTopologyStrategy"]
-
-# ─── Models ─────────────────────────────────────────────────────────
-
-class KeyspaceCreate(BaseModel):
-    keyspace_name: str
-    replication_factor: int = 1
-    strategy: StrategyType = "SimpleStrategy"
-
-class TableCreate(BaseModel):
-    table_name: str
-    columns: dict           # {"col_name": "TYPE"} ex: {"id": "UUID", "name": "TEXT"}
-    partition_key: list[str]
-    clustering_key: list[str] = []
-
-class InsertData(BaseModel):
-    data: dict              # {"col": "value"}
-    write_consistency: ConsistencyType = "QUORUM"
-
-class SelectData(BaseModel):
-    filters: Optional[dict] = {}
-    read_consistency: ConsistencyType = "QUORUM"
-
-
 # ─── Keyspace routes ────────────────────────────────────────────────
 
-@router.post("/{cluster_name}/keyspace")
+@router.post("/{cluster_name}/keyspace", response_model=KeyspaceResponse)
 def create_keyspace_route(cluster_name: str, payload: KeyspaceCreate):
     return create_keyspace(
         cluster_name=cluster_name,
@@ -45,14 +21,14 @@ def create_keyspace_route(cluster_name: str, payload: KeyspaceCreate):
         strategy=payload.strategy
     )
 
-@router.get("/{cluster_name}/keyspaces")
+@router.get("/{cluster_name}/keyspaces", response_model=list[str])
 def list_keyspaces_route(cluster_name: str):
     return list_keyspaces(cluster_name)
 
 
 # ─── Table routes ───────────────────────────────────────────────────
 
-@router.post("/{cluster_name}/{keyspace_name}/table")
+@router.post("/{cluster_name}/{keyspace_name}/table", response_model=TableResponse)
 def create_table_route(cluster_name: str, keyspace_name: str, payload: TableCreate):
     return create_table(
         cluster_name=cluster_name,
@@ -63,7 +39,7 @@ def create_table_route(cluster_name: str, keyspace_name: str, payload: TableCrea
         clustering_key=payload.clustering_key
     )
 
-@router.get("/{cluster_name}/{keyspace_name}/tables")
+@router.get("/{cluster_name}/{keyspace_name}/tables", response_model=list[str])
 def list_tables_route(cluster_name: str, keyspace_name: str):
     return list_tables(cluster_name, keyspace_name)
 

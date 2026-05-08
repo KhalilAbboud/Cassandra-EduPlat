@@ -4,15 +4,18 @@ from datetime import datetime
 
 REGISTRY_PATH = "cluster_registry.json"
 
+def write_registry(data: dict):
+    with open(REGISTRY_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
 def read_registry() -> dict:
     if not os.path.exists(REGISTRY_PATH):
         return {}
     with open(REGISTRY_PATH, "r") as f:
-        return json.load(f)
-
-def write_registry(data: dict):
-    with open(REGISTRY_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+        content = f.read().strip()
+        if not content:
+            return {}
+        return json.loads(content)
 
 def add_cluster(cluster_name: str, partitioner: str, nodes: list[str]):
     registry = read_registry()
@@ -35,11 +38,3 @@ def remove_cluster(cluster_name: str):
 def get_cluster(cluster_name: str) -> dict | None:
     registry = read_registry()
     return registry.get(cluster_name, None)
-def read_registry() -> dict:
-    if not os.path.exists(REGISTRY_PATH):
-        return {}
-    with open(REGISTRY_PATH, "r") as f:
-        content = f.read().strip()
-        if not content:
-            return {}
-        return json.loads(content)

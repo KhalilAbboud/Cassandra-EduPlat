@@ -5,6 +5,7 @@ from routes.cluster_routes import router as cluster_router
 from routes.node_routes import router as node_router
 from routes.data_routes import router as data_router
 from services.registryService import write_registry
+from routes.token_routes import router as token_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,3 +31,4 @@ def root():
 app.include_router(node_router, prefix="/api/v1")
 app.include_router(cluster_router, prefix="/api/v1")
 app.include_router(data_router, prefix="/api/v1")
+app.include_router(token_router, prefix="/api/v1") 
