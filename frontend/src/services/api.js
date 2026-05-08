@@ -1,17 +1,16 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://localhost:8000/api/v1";
 
-// Nodes api calls
-export async function addNode(id) {
-  const res = await fetch(`${API_BASE}/node/add`, {
+export async function addNode(name) {
+  const res = await fetch(`${API_BASE}/nodes/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ name, cluster_name: "TestCluster" }),
   });
   return res.json();
 }
 
 export async function removeNode(id) {
-  const res = await fetch(`${API_BASE}/node/remove/${id}`, {
+  const res = await fetch(`${API_BASE}/nodes/${id}`, {
     method: "DELETE",
   });
   return res.json();
@@ -23,18 +22,15 @@ export async function getNodeHealth(nodeId) {
 }
 
 export async function getCluster() {
-  const res = await fetch(`${API_BASE}/cluster`);
+  const res = await fetch(`${API_BASE}/nodes/`);
   return res.json();
 }
 
 export async function getClusterStatus() {
-  const res = await fetch(`${API_BASE}/nodes/status`);
+  const res = await fetch(`${API_BASE}/cluster/status`);
   return res.json();
 }
 
-
-
-// Data api calls
 export async function writeData(key, value) {
   const res = await fetch(`${API_BASE}/data/write`, {
     method: "POST",
@@ -67,14 +63,14 @@ export async function importCsv(file, hasHeader = true, columnNames = "") {
     body: formData,
   });
 
-  if (!res.ok) {
-    let detail = null;
-    try {
-      const data = await res.json();
-      detail = data?.detail ?? null;
-    } catch { /* ignore */ }
-    throw new Error(detail ? `CSV import failed: ${detail}` : "CSV import failed");
+  let data;
+  try { data = await res.json(); } catch {
+    throw new Error("CSV import failed: invalid server response");
   }
 
-  return res.json();
+  if (!res.ok) {
+    throw new Error(data?.detail ? `CSV import failed: ${data.detail}` : "CSV import failed");
+  }
+
+  return data;
 }

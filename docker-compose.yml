@@ -4,7 +4,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./backend:/app
+    networks:
+      - cassandra-net
 
   frontend:
     build: ./frontend
@@ -13,3 +16,10 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    networks:
+      - cassandra-net
+
+networks:
+  cassandra-net:
+    driver: bridge
+    name: cassandra-net

@@ -1,12 +1,16 @@
 import docker
 import time
-client = docker.from_env()
-NETWORK_NAME = "cassandra-net"
-# ERREUR 1 — CLUSTER_NAME n'est pas défini
-CLUSTER_NAME = "TestCluster"  # ← ajoute cette ligne en haut
 
-# ERREUR 2 — wait_until_up n'est pas défini dans dockerService.py
-# ← ajoute cette fonction
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        _client = docker.from_env()
+    return _client
+NETWORK_NAME = "cassandra-net"
+CLUSTER_NAME = "TestCluster"
+
 def wait_until_up(container, node_name, expected_un_count=1, timeout=180):
     print(f"⏳ Waiting for {node_name} ({expected_un_count} UN expected)...")
     start = time.time()
@@ -28,19 +32,19 @@ def wait_until_up(container, node_name, expected_un_count=1, timeout=180):
     return False
 
 def get_or_create_network():
-    networks = client.networks.list(names=[NETWORK_NAME])
+    networks = get_client().networks.list(names=[NETWORK_NAME])
     # Filtrer par nom exact
     networks = [n for n in networks if n.name == NETWORK_NAME]
     if networks:
         print(networks[0].attrs['IPAM']['Config'][0].get('Subnet', 'N/A') + " network already exists.")
         return networks[0]
     else:
-        network = client.networks.create(NETWORK_NAME, driver="bridge")
+        network = get_client().networks.create(NETWORK_NAME, driver="bridge")
         print(f"✅ Network {NETWORK_NAME} created.")
         return network
 def get_existing_seed():
     """Retourne l'IP d'un nœud déjà UP dans le réseau, sinon None"""
-    networks = [n for n in client.networks.list(names=[NETWORK_NAME]) if n.name == NETWORK_NAME]
+    networks = [n for n in get_client().networks.list(names=[NETWORK_NAME]) if n.name == NETWORK_NAME]
     if not networks:
         return None
     
@@ -61,9 +65,10 @@ def get_existing_seed():
     return None  # Aucun nœud existant → ce nœud sera le seed
 
 def create_cassandra_node(node_name):
+    get_or_create_network()
     # Supprimer si existe déjà
     try:
-        old = client.containers.get(node_name)
+        old = get_client().containers.get(node_name)
         old.remove(force=True)
         print(f"🗑️ Removed old {node_name}")
     except docker.errors.NotFound:
@@ -78,7 +83,7 @@ def create_cassandra_node(node_name):
         print(f"🆕 {node_name} will be the first node (seed = itself)")
         seed = node_name  # Premier nœud = se seed lui-même
 
-    container = client.containers.run(
+    container = get_client().containers.run(
         "cassandra:latest",
         name=node_name,
         environment={

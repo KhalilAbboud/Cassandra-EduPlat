@@ -1,14 +1,23 @@
 import uuid
 import time
 from models.node import NodeCreate, NodeResponse, NodeStatus
-from services.dockerService import create_cassandra_node, NETWORK_NAME, get_nodes_in_network
+from services.dockerService import create_cassandra_node, NETWORK_NAME, get_nodes_in_network, get_client
+import docker
+
+# Containers that belong to compose infra, not Cassandra nodes
+EXCLUDED = {"cassandraeduplat-frontend-1", "cassandraeduplat-backend-1"}
+
 def wait_for_cluster_join(expected_count: int, timeout=180):
-    """Attend que node-1 voit expected_count nœuds UN"""
     start = time.time()
     while time.time() - start < timeout:
         try:
-            node1 = client.containers.get("node-1") # ou le premier nœud du réseau
-            result = node1.exec_run("nodetool status")
+            # Use first available cassandra node, not hardcoded "node-1"
+            containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
+            if not containers:
+                time.sleep(5)
+                continue
+            first = containers[0]
+            result = first.exec_run("nodetool status")
             output = result.output.decode()
             un_count = output.count("UN")
             print(f"  → {un_count}/{expected_count} UN detected...")
@@ -22,18 +31,17 @@ def wait_for_cluster_join(expected_count: int, timeout=180):
 def create_node(payload: NodeCreate) -> NodeResponse:
     node_id = str(uuid.uuid4())
     container = create_cassandra_node(node_name=payload.name)
-    
-    # Compter combien de nœuds sont dans le réseau
-    containers = get_nodes_in_network()
+
+    # Count only real cassandra nodes (exclude infra)
+    containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
     expected = len(containers)
-    
-    # Attendre que TOUS les nœuds actuels soient visibles depuis le premier
+
     print(f"⏳ Waiting for {expected} UN nodes...")
     wait_for_cluster_join(expected_count=expected)
-    
+
     container.reload()
-    ip = container.attrs["NetworkSettings"]["Networks"][NETWORK_NAME]["IPAddress"]
-    
+    ip = container.attrs["NetworkSettings"]["Networks"].get(NETWORK_NAME, {}).get("IPAddress", "")
+
     return NodeResponse(
         id=node_id,
         name=payload.name,
@@ -43,8 +51,9 @@ def create_node(payload: NodeCreate) -> NodeResponse:
         datacenter="dc1",
         tokens=[]
     )
-def get_all_nodes() -> list[NodeResponse]:
-    containers = get_nodes_in_network()
+
+def get_all_nodes() -> list[NodeResponse]:   # ← deduped, was defined twice
+    containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
     result = []
     for container in containers:
         container.reload()
@@ -59,19 +68,28 @@ def get_all_nodes() -> list[NodeResponse]:
             tokens=[]
         ))
     return result
-def get_all_nodes() -> list[NodeResponse]:
-    containers = get_nodes_in_network()
-    result = []
+
+def get_node(node_id: str) -> NodeResponse | None:
+    containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
     for container in containers:
-        container.reload()
-        ip = container.attrs["NetworkSettings"]["Networks"].get(NETWORK_NAME, {}).get("IPAddress", "")
-        result.append(NodeResponse(
-            id=container.id,
-            name=container.name,
-            ip=ip,
-            status=NodeStatus.UP,
-            rack="rack1",
-            datacenter="dc1",
-            tokens=[]
-        ))
-    return result
+        if container.name == node_id:
+            container.reload()
+            ip = container.attrs["NetworkSettings"]["Networks"].get(NETWORK_NAME, {}).get("IPAddress", "")
+            return NodeResponse(
+                id=container.id,
+                name=container.name,
+                ip=ip,
+                status=NodeStatus.UP,
+                rack="rack1",
+                datacenter="dc1",
+                tokens=[]
+            )
+    return None
+
+def delete_node(node_id: str) -> bool:
+    try:
+        container = get_client().containers.get(node_id)
+        container.remove(force=True)
+        return True
+    except docker.errors.NotFound:
+        return False

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addNode, removeNode, writeData, readData,
   getCluster, getNodeHealth, getClusterStatus,
@@ -8,22 +8,22 @@ import TokenRing from "./components/TokenRing";
 import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
 import "./App.css";
 const NAME_POOL = [
-  "NodeA","NodeB","NodeC","NodeD","NodeE",
-  "NodeF","NodeG","NodeH","NodeI","NodeJ",
-  "NodeK","NodeL","NodeM","NodeN","NodeO",
-  "NodeP","NodeQ","NodeR","NodeS","NodeT",
+  "NodeA", "NodeB", "NodeC", "NodeD", "NodeE",
+  "NodeF", "NodeG", "NodeH", "NodeI", "NodeJ",
+  "NodeK", "NodeL", "NodeM", "NodeN", "NodeO",
+  "NodeP", "NodeQ", "NodeR", "NodeS", "NodeT",
 ];
 
 // ── style tokens ─────────────────────────────────────────────────────────────
-const BORDER  = "1px solid rgba(255,255,255,0.07)";
+const BORDER = "1px solid rgba(255,255,255,0.07)";
 const BG_CARD = "rgba(255,255,255,0.03)";
-const PURPLE  = "#7c6af7";
+const PURPLE = "#7c6af7";
 
-const card  = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
-const h3    = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: PURPLE, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
-const inp   = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
-const btn   = { width: "100%", marginBottom: 4 };
-const lbl   = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
+const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
+const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: PURPLE, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
+const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
+const btn = { width: "100%", marginBottom: 4 };
+const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
 
 // ── sidebar toggle button ─────────────────────────────────────────────────────
 function CollapseBtn({ open, onClick, side }) {
@@ -64,41 +64,42 @@ function CollapseBtn({ open, onClick, side }) {
 }
 
 export default function App() {
-  const [nodes,       setNodes]       = useState([]);
+  const [nodes, setNodes] = useState([]);
   const [clusterData, setClusterData] = useState({});
 
-  const [key,           setKey]           = useState("");
-  const [value,         setValue]         = useState("");
-  const [deleteKey,     setDeleteKey]     = useState("");
-  const [output,        setOutput]        = useState(null);
-  const [nodeStatus,    setNodeStatus]    = useState(null);
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [deleteKey, setDeleteKey] = useState("");
+  const [output, setOutput] = useState(null);
+  const [nodeStatus, setNodeStatus] = useState(null);
+  const [healthNodeId, setHealthNodeId] = useState("");
   const [clusterStatus, setClusterStatus] = useState(null);
 
-  const [csvFile,         setCsvFile]        = useState(null);
-  const [csvPreviewRows,  setCsvPreviewRows]  = useState({});
-  const [csvColumns,      setCsvColumns]      = useState([]);
-  const [partitionKey,    setPartitionKey]    = useState("");
-  const [csvError,        setCsvError]        = useState("");
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreviewRows, setCsvPreviewRows] = useState({});
+  const [csvColumns, setCsvColumns] = useState([]);
+  const [partitionKey, setPartitionKey] = useState("");
+  const [csvError, setCsvError] = useState("");
   const [csvImportResult, setCsvImportResult] = useState(null);
-  const [csvHasHeader,    setCsvHasHeader]    = useState(true);
-  const [csvColumnNames,  setCsvColumnNames]  = useState("");
+  const [csvHasHeader, setCsvHasHeader] = useState(true);
+  const [csvColumnNames, setCsvColumnNames] = useState("");
   const [csvDistribution, setCsvDistribution] = useState([]);
 
   const [replicationFactor, setReplicationFactor] = useState(2);
-  const [consistencyLevel,  setConsistencyLevel]  = useState("QUORUM");
-  const [simulationResult,  setSimulationResult]  = useState(null);
+  const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
+  const [simulationResult, setSimulationResult] = useState(null);
   const [consistencyResult, setConsistencyResult] = useState(null);
 
   // ── sidebar open/close state ──────────────────────────────────────────────
-  const [leftOpen,  setLeftOpen]  = useState(true);
+  const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  const SIDEBAR_W   = 270;
+  const SIDEBAR_W = 270;
   const COLLAPSED_W = 0;
 
   const replicatedCounts = csvImportResult?.replicated_counts_per_node ?? {};
-  const replicatedNodes  = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
-  const maxReplicated    = useMemo(() => {
+  const replicatedNodes = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
+  const maxReplicated = useMemo(() => {
     const vals = Object.values(replicatedCounts);
     return vals.length ? Math.max(...vals) : 0;
   }, [replicatedCounts]);
@@ -137,11 +138,18 @@ export default function App() {
       setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
   }, [key, nodes, replicationFactor, consistencyLevel]);
 
+  // Re-check consistency when CL changes while a simulation result exists
+  useEffect(() => {
+    if (simulationResult?.replicas) {
+      setConsistencyResult(checkConsistency({ replicas: simulationResult.replicas, consistencyLevel }));
+    }
+  }, [consistencyLevel, simulationResult]);
+
   const parseCsvMeta = useCallback((text) => {
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return null;
     const firstL = lines[0];
-    const delim  = firstL.includes(";") && !firstL.includes(",") ? ";" : ",";
+    const delim = firstL.includes(";") && !firstL.includes(",") ? ";" : ",";
     let headers, dataLines;
     if (csvHasHeader) {
       headers = firstL.split(delim).map((c) => c.trim());
@@ -169,11 +177,11 @@ export default function App() {
     const { delim, headers, dataLines } = meta;
     setCsvColumns(headers); setPartitionKey(headers[0] ?? "");
     const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
-    const preview   = {};
+    const preview = {};
     for (let i = 0; i < Math.min(dataLines.length, 12); i++) {
       const parts = dataLines[i].split(delim).map((c) => c.trim());
       if (!parts[0]) continue;
-      const rowId  = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
+      const rowId = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
       const rowObj = {};
       headers.forEach((h, idx) => { if (parts[idx] !== undefined && parts[idx] !== "") rowObj[h] = parts[idx]; });
       preview[rowId] = rowObj;
@@ -183,7 +191,7 @@ export default function App() {
   }, [parseCsvMeta]);
 
   const onImportCsv = useCallback(async () => {
-    if (!csvFile)      { setCsvError("Choose a CSV file first."); return; }
+    if (!csvFile) { setCsvError("Choose a CSV file first."); return; }
     if (!partitionKey) { setCsvError("Choose a partition key."); return; }
     setCsvError("");
 
@@ -202,7 +210,7 @@ export default function App() {
     const dist = [];
     dataLines.forEach((line, i) => {
       const parts = line.split(delim).map((c) => c.trim());
-      const row   = {};
+      const row = {};
       headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
       const pval = row[partitionKey];
       if (!pval) return;
@@ -270,91 +278,63 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
 
         {/* ══ LEFT SIDEBAR ══ */}
-        <div style={{ position: "fixed", top: 0, left: 0, height: "100%", zIndex: 20, width: SIDEBAR_W }}>
-        <div style={sidebarStyle(leftOpen, "left")}>
-          <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
-          <div style={sidebarInnerStyle}>
+        <div style={{ position: "fixed", top: 48, left: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
+          <div style={sidebarStyle(leftOpen, "left")}>
+            <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
+            <div style={sidebarInnerStyle}>
 
-            <Section title="Cluster">
-              <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); })}>Show Cluster</button>
-              <button style={btn} onClick={() => getClusterStatus().then(setClusterStatus)}>Cluster Status</button>
-              {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 120, overflow: "auto", marginTop: 6 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
-            </Section>
+              <Section title="Cluster">
+                <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); }).catch((e) => setOutput({ error: e.message }))}>Show Cluster</button>
+              </Section>
 
-            <Section title="Node Failure Sim">
-              {nodes.length === 0
-                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
-                : nodes.map((node) => (
-                  <button key={node.id} style={btn} onClick={() => toggleNodeStatus(node.id)}>
-                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
-                  </button>
-                ))}
-            </Section>
+              <Section title="CSV Import">
+                <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={csvHasHeader}
+                    onChange={(e) => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); }} />
+                  Has header row
+                </label>
+                {!csvHasHeader && (
+                  <input style={inp} placeholder="col1;col2;col3" value={csvColumnNames}
+                    onChange={(e) => { setCsvColumnNames(e.target.value); setCsvPreviewRows({}); }} />
+                )}
+                <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
+                {csvColumns.length > 0 && (
+                  <>
+                    <label style={lbl}>Partition Key</label>
+                    <select style={inp} value={partitionKey} onChange={(e) => setPartitionKey(e.target.value)}>
+                      {csvColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </>
+                )}
+                <button style={btn} onClick={onImportCsv}>Import CSV</button>
+                {csvError && <pre style={{ color: "#f76a6a", fontSize: 10 }}>{csvError}</pre>}
+                {Object.keys(csvPreviewRows).length > 0 && (
+                  <>
+                    <label style={{ ...lbl, marginTop: 8 }}>Preview (first rows)</label>
+                    <pre style={{ maxHeight: 160, overflow: "auto", fontSize: 9 }}>
+                      {JSON.stringify(csvPreviewRows, null, 2)}
+                    </pre>
+                  </>
+                )}
+              </Section>
 
-            <Section title="CSV Import">
-              <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                <input type="checkbox" checked={csvHasHeader}
-                  onChange={(e) => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); }} />
-                Has header row
-              </label>
-              {!csvHasHeader && (
-                <input style={inp} placeholder="col1;col2;col3" value={csvColumnNames}
-                  onChange={(e) => { setCsvColumnNames(e.target.value); setCsvPreviewRows({}); }} />
-              )}
-              <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
-              {csvColumns.length > 0 && (
-                <>
-                  <label style={lbl}>Partition Key</label>
-                  <select style={inp} value={partitionKey} onChange={(e) => setPartitionKey(e.target.value)}>
-                    {csvColumns.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </>
-              )}
-              <button style={btn} onClick={onImportCsv}>Import CSV</button>
-              {csvError && <pre style={{ color: "#f76a6a", fontSize: 10 }}>{csvError}</pre>}
-              {Object.keys(csvPreviewRows).length > 0 && (
-                <>
-                  <label style={{ ...lbl, marginTop: 8 }}>Preview (first rows)</label>
-                  <pre style={{ maxHeight: 160, overflow: "auto", fontSize: 9 }}>
-                    {JSON.stringify(csvPreviewRows, null, 2)}
+
+
+              {csvImportResult?.table && (
+                <Section title="Imported Table">
+                  <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 9 }}>
+                    {JSON.stringify(csvImportResult.table, null, 2)}
                   </pre>
-                </>
+                  <p style={{ opacity: 0.35, fontSize: 10, marginTop: 4 }}>
+                    {csvImportResult.rows_imported} rows imported
+                    {csvImportResult.rows_skipped > 0 && `, ${csvImportResult.rows_skipped} skipped`}
+                  </p>
+                </Section>
               )}
-            </Section>
 
-            {replicatedNodes.length > 0 && (
-              <Section title="Distribution / Node">
-                {replicatedNodes.map((n) => {
-                  const count = replicatedCounts[n] ?? 0;
-                  const pct   = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
-                  return (
-                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
-                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, background: PURPLE, height: 10, transition: "width .4s" }} />
-                      </div>
-                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
-                    </div>
-                  );
-                })}
-              </Section>
-            )}
-
-            {csvImportResult?.table && (
-              <Section title="Imported Table">
-                <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 9 }}>
-                  {JSON.stringify(csvImportResult.table, null, 2)}
-                </pre>
-                <p style={{ opacity: 0.35, fontSize: 10, marginTop: 4 }}>
-                  {csvImportResult.rows_imported} rows imported
-                  {csvImportResult.rows_skipped > 0 && `, ${csvImportResult.rows_skipped} skipped`}
-                </p>
-              </Section>
-            )}
-
+            </div>
           </div>
         </div>
-      </div>
 
         {/* ══ CENTER ══ */}
         <main style={{
@@ -362,6 +342,9 @@ export default function App() {
           display: "flex", flexDirection: "column", alignItems: "center",
           padding: "24px 20px", gap: 16,
           minWidth: 0,
+          marginLeft: leftOpen ? SIDEBAR_W : 0,
+          marginRight: rightOpen ? SIDEBAR_W : 0,
+          transition: "margin 0.28s cubic-bezier(0.4,0,0.2,1)",
         }}>
           {/* hint bar */}
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
@@ -380,14 +363,14 @@ export default function App() {
           </div>
 
           {/* bottom strip */}
-          <div style={{ width: "100%", maxWidth: 700, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
             {/*output*/}
             <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
               <div style={h3}>Output</div>
               {output
                 ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                    {JSON.stringify(output, null, 2)}
-                  </div>
+                  {JSON.stringify(output, null, 2)}
+                </div>
                 : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
             </div>
             {/* simulation settings */}
@@ -420,9 +403,11 @@ export default function App() {
                     <div key={n.id} style={{ color: PURPLE }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
                   ))}
                   {consistencyResult && (
-                    <div style={{ marginTop: 8, padding: "6px 8px", borderRadius: 6,
+                    <div style={{
+                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
                       background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
-                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44` }}>
+                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
+                    }}>
                       <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
                         {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
                       </div>
@@ -439,42 +424,95 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* bottom strip row 2 — relocated panels */}
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/* Node Failure Sim */}
+            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
+              <div style={h3}>Node Failure Sim</div>
+              {nodes.length === 0
+                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
+                : nodes.map((node) => (
+                  <button key={node.id}
+                    style={{
+                      ...btn,
+                      background: node.status === "down" ? "#8b2020" : undefined,
+                      color: node.status === "down" ? "#fff" : undefined,
+                      border: node.status === "down" ? "1px solid #b33030" : undefined,
+                      fontWeight: node.status === "down" ? 700 : undefined,
+                    }}
+                    onClick={() => toggleNodeStatus(node.id)}>
+                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
+                  </button>
+                ))}
+            </div>
+
+            {/* Cluster Status & Node Health */}
+            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
+              <div style={h3}>Cluster & Node Health</div>
+              <button style={{ ...btn, marginBottom: 6 }} onClick={() => getClusterStatus().then(setClusterStatus).catch((e) => setClusterStatus({ error: e.message }))}>Cluster Status</button>
+              {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input style={{ ...inp, flex: 1, marginBottom: 0 }} placeholder="NodeA" value={healthNodeId} onChange={(e) => setHealthNodeId(e.target.value)} />
+                <button style={{ ...btn, width: "auto", flex: "0 0 auto", marginBottom: 0, padding: "6px 10px", fontSize: 10 }}
+                  onClick={() => getNodeHealth(healthNodeId).then(setNodeStatus).catch((e) => setNodeStatus({ error: e.message }))}>
+                  Check
+                </button>
+              </div>
+              {nodeStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
+            </div>
+
+            {/* Distribution / Node */}
+            {replicatedNodes.length > 0 && (
+              <div style={{ ...card, flex: 2, minWidth: 250, marginBottom: 0 }}>
+                <div style={h3}>Distribution / Node</div>
+                {replicatedNodes.map((n) => {
+                  const count = replicatedCounts[n] ?? 0;
+                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  return (
+                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
+                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, background: PURPLE, height: 10, transition: "width .4s" }} />
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </main>
 
         {/* ══ RIGHT SIDEBAR ══ */}
-        <div style={{ position: "fixed", top: 0, right: 0, height: "100%", zIndex: 20, width: SIDEBAR_W }}>
-        <div style={sidebarStyle(rightOpen, "right")}>
-          <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
-          <div style={sidebarInnerStyle}>
+        <div style={{ position: "fixed", top: 48, right: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
+          <div style={sidebarStyle(rightOpen, "right")}>
+            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
+            <div style={sidebarInnerStyle}>
 
-            <Section title="Write / Read">
-              <label style={lbl}>Key</label>
-              <input style={inp} placeholder="e.g. user:42" value={key} onChange={(e) => setKey(e.target.value)} />
-              <label style={lbl}>Value</label>
-              <input style={inp} placeholder="e.g. Alice" value={value} onChange={(e) => setValue(e.target.value)} />
-              <button style={btn} onClick={() => writeData(key, value).then((r) => { setOutput(r); fetchCluster(); })}>Write</button>
-              <button style={btn} onClick={() => readData(key).then(setOutput)}>Read</button>
-            </Section>
+              <Section title="Write / Read">
+                <label style={lbl}>Key</label>
+                <input style={inp} placeholder="e.g. user:42" value={key} onChange={(e) => setKey(e.target.value)} />
+                <label style={lbl}>Value</label>
+                <input style={inp} placeholder="e.g. Alice" value={value} onChange={(e) => setValue(e.target.value)} />
+                <button style={btn} onClick={() => writeData(key, value).then((r) => { setOutput(r); fetchCluster(); }).catch((e) => setOutput({ error: e.message }))}>Write</button>
+                <button style={btn} onClick={() => readData(key).then(setOutput).catch((e) => setOutput({ error: e.message }))}>Read</button>
+              </Section>
 
-            <Section title="Delete">
-              <label style={lbl}>Key</label>
-              <input style={inp} placeholder="key to delete" value={deleteKey} onChange={(e) => setDeleteKey(e.target.value)} />
-              <button style={{ ...btn, color: "#f76a6a" }}
-                onClick={() => deleteData(deleteKey).then((r) => { setOutput(r); fetchCluster(); })}>
-                Delete
-              </button>
-            </Section>
+              <Section title="Delete">
+                <label style={lbl}>Key</label>
+                <input style={inp} placeholder="key to delete" value={deleteKey} onChange={(e) => setDeleteKey(e.target.value)} />
+                <button style={{ ...btn, color: "#f76a6a" }}
+                  onClick={() => deleteData(deleteKey).then((r) => { setOutput(r); fetchCluster(); }).catch((e) => setOutput({ error: e.message }))}>
+                  Delete
+                </button>
+              </Section>
 
-            <Section title="Node Health">
-              <label style={lbl}>Node ID</label>
-              <input style={inp} placeholder="NodeA" value={key} onChange={(e) => setKey(e.target.value)} />
-              <button style={btn} onClick={() => getNodeHealth(key).then(setNodeStatus).catch(setNodeStatus)}>Check Node</button>
-              {nodeStatus && <pre style={{ fontSize: 10, marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
-            </Section>
-            
+
+
+            </div>
           </div>
         </div>
-      </div>
 
       </div>
     </div>
