@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+docker
+cassandra-driver
+pydantic

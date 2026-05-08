@@ -10,7 +10,7 @@ def create_node(payload: NodeCreate) -> NodeResponse:
     network_name = f"cassandra-net-{payload.cluster_name}"
     node_id = str(uuid.uuid4())
     
-    container = create_cassandra_node(node_name=payload.name, cluster_name=payload.cluster_name)
+    container, host_port = create_cassandra_node(node_name=payload.name, cluster_name=payload.cluster_name)
     
     containers = get_nodes_in_network(payload.cluster_name)
     expected = len(containers)

@@ -4,6 +4,9 @@ from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import SimpleStatement
 from cassandra import ConsistencyLevel
 from services.dockerService import client
+from cassandra import Unavailable
+from cassandra.cluster import NoHostAvailable
+from fastapi import HTTPException
 import uuid
 # ─── Consistency map ────────────────────────────────────────────────
 CONSISTENCY_MAP = {
@@ -18,8 +21,6 @@ def get_session(cluster_name: str):
     all_containers = client.containers.list(all=True)
 
     contact_points = []
-    host_port = 9042  # défaut
-
     for c in all_containers:
         c.reload()
         networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
@@ -33,7 +34,6 @@ def get_session(cluster_name: str):
     if not contact_points:
         raise Exception(f"No running nodes found for cluster '{cluster_name}'")
 
-    # On utilise le premier port trouvé — le driver découvre les autres automatiquement
     first_port = contact_points[0]
     print(f"🔌 Connecting to {cluster_name} via 127.0.0.1:{first_port}")
 
@@ -41,9 +41,12 @@ def get_session(cluster_name: str):
         contact_points=["127.0.0.1"],
         port=first_port,
         load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
-        protocol_version=5
+        protocol_version=5,
+        connect_timeout=30,        # ← ajouté
     )
-    return cluster.connect()
+    session = cluster.connect()
+    session.default_timeout = 30   # ← ajouté
+    return session
 
 
 # ─── Keyspace ───────────────────────────────────────────────────────
@@ -142,28 +145,55 @@ def insert_data(
     data: dict,
     write_consistency: str = "QUORUM"
 ):
-    session = get_session(cluster_name)
-    consistency = CONSISTENCY_MAP.get(write_consistency, ConsistencyLevel.QUORUM)
+    try:
+        session = get_session(cluster_name)
+        consistency = CONSISTENCY_MAP.get(write_consistency, ConsistencyLevel.QUORUM)
 
-    # Remplacer "uuid()" par un vrai UUID Python
-    processed_data = {}
-    for k, v in data.items():
-        if v == "uuid()":
-            processed_data[k] = uuid.uuid4()
-        else:
-            processed_data[k] = v
+        # Remplacer "uuid()" par un vrai UUID Python
+        processed_data = {}
+        for k, v in data.items():
+            if v == "uuid()":
+                processed_data[k] = uuid.uuid4()
+            else:
+                processed_data[k] = v
 
-    columns = ", ".join(processed_data.keys())
-    placeholders = ", ".join(["%s"] * len(processed_data))
-    values = list(processed_data.values())
+        columns = ", ".join(processed_data.keys())
+        placeholders = ", ".join(["%s"] * len(processed_data))
+        values = list(processed_data.values())
 
-    cql = f"INSERT INTO {keyspace_name}.{table_name} ({columns}) VALUES ({placeholders})"
-    statement = SimpleStatement(cql, consistency_level=consistency)
-    session.execute(statement, values)
+        cql = f"INSERT INTO {keyspace_name}.{table_name} ({columns}) VALUES ({placeholders})"
+        statement = SimpleStatement(cql, consistency_level=consistency)
+        session.execute(statement, values)
 
-    print(f"✅ Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
-    return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
-
+        print(f"✅ Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
+        return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
+    except Unavailable as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Consistency level not achievable",
+                "consistency_requested": write_consistency,
+                "required_replicas": e.required_replicas,
+                "alive_replicas": e.alive_replicas,
+                "tip": f"Try a lower consistency level or ensure enough nodes are UP"
+            }
+        )
+    except NoHostAvailable as e:
+        errors = e.errors
+        for host, exc in errors.items():
+            if isinstance(exc, Unavailable):
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "Consistency level not achievable",
+                        "consistency_requested": read_consistency,
+                        "required_replicas": exc.required_replicas,
+                        "alive_replicas": exc.alive_replicas,
+                        "reason": "Keyspace replication_factor too low or not enough nodes UP",
+                        "tip": "Increase replication_factor or use a lower consistency level"
+                    }
+                )
+        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
 
 # ─── Select ─────────────────────────────────────────────────────────
 def select_data(
@@ -173,20 +203,49 @@ def select_data(
     filters: dict = {},     # {"col": "value"} optionnel
     read_consistency: str = "QUORUM"
 ):
-    session = get_session(cluster_name)
-    consistency = CONSISTENCY_MAP.get(read_consistency, ConsistencyLevel.QUORUM)
+    try:   
+        session = get_session(cluster_name)
+        consistency = CONSISTENCY_MAP.get(read_consistency, ConsistencyLevel.QUORUM)
 
-    cql = f"SELECT * FROM {keyspace_name}.{table_name}"
-    values = []
+        cql = f"SELECT * FROM {keyspace_name}.{table_name}"
+        values = []
 
-    if filters:
-        where_clause = " AND ".join(f"{col} = %s" for col in filters.keys())
-        cql += f" WHERE {where_clause}"
-        values = list(filters.values())
+        if filters:
+            where_clause = " AND ".join(f"{col} = %s" for col in filters.keys())
+            cql += f" WHERE {where_clause}"
+            values = list(filters.values())
 
-    statement = SimpleStatement(cql, consistency_level=consistency)
-    rows = session.execute(statement, values)
+        statement = SimpleStatement(cql, consistency_level=consistency)
+        rows = session.execute(statement, values)
 
-    result = [dict(row._asdict()) for row in rows]
-    print(f"📖 Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
-    return result
+        result = [dict(row._asdict()) for row in rows]
+        print(f"📖 Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
+        return result
+    except Unavailable as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Consistency level not achievable",
+                "consistency_requested": read_consistency,
+                "required_replicas": e.required_replicas,
+                "alive_replicas": e.alive_replicas,
+                "reason": "Keyspace replication_factor too low or not enough nodes UP",
+                "tip": "Increase replication_factor or use a lower consistency level"
+            })
+    except NoHostAvailable as e:
+        errors = e.errors
+        for host, exc in errors.items():
+            if isinstance(exc, Unavailable):
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "Consistency level not achievable",
+                        "consistency_requested": read_consistency,
+                        "required_replicas": exc.required_replicas,
+                        "alive_replicas": exc.alive_replicas,
+                        "reason": "Keyspace replication_factor too low or not enough nodes UP",
+                        "tip": "Increase replication_factor or use a lower consistency level"
+                    }
+                )
+        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
+        

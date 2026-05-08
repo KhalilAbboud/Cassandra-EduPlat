@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Literal
 from services.dockerService import create_cluster, get_nodes_in_network, client, PARTITIONER_MAP
+from services.registryService import add_cluster, remove_cluster
 
 router = APIRouter(prefix="/cluster", tags=["Cluster"])
 
@@ -19,6 +20,7 @@ class PartitionerChange(BaseModel):
 @router.post("/create")
 def create_cluster_route(payload: ClusterCreate):
     create_cluster(payload.nodes, payload.cluster_name, payload.partitioner)  # ← passé ici
+    add_cluster(payload.cluster_name, payload.partitioner, payload.nodes)
     return {
         "message": "Cluster created",
         "cluster": payload.cluster_name,
@@ -36,6 +38,7 @@ def delete_cluster(cluster_name: str):
     containers = get_nodes_in_network(cluster_name)
     for c in containers:
         c.remove(force=True)
+    remove_cluster(cluster_name)
     return {"message": f"Cluster '{cluster_name}' deleted"}
 
 @router.post("/{cluster_name}/stop")
@@ -69,7 +72,7 @@ def change_partitioner(cluster_name: str, payload: PartitionerChange):
 
     # 3. Recréer le cluster avec le nouveau partitioner
     create_cluster(node_names, cluster_name, payload.partitioner)
-
+    add_cluster(cluster_name, payload.partitioner, node_names)
     return {
         "warning": "All data has been lost",
         "cluster": cluster_name,
