@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  addNode, removeNode, writeData, readData,
-  getCluster, getNodeHealth, getClusterStatus,
-  deleteData, importCsv,
+  addNode,
+  removeNode,
+  writeData,
+  readData,
+  getCluster,
+  getNodeHealth,
+  getClusterStatus,
+  deleteData,
+  importCsv,
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
-import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
+import {
+  simulatePlacement,
+  checkConsistency,
+} from "./utils/cassandraSimulation";
 import "./App.css";
+
 const NAME_POOL = [
   "NodeA", "NodeB", "NodeC", "NodeD", "NodeE",
   "NodeF", "NodeG", "NodeH", "NodeI", "NodeJ",
@@ -14,52 +24,35 @@ const NAME_POOL = [
   "NodeP", "NodeQ", "NodeR", "NodeS", "NodeT",
 ];
 
-// ── style tokens ─────────────────────────────────────────────────────────────
-const BORDER = "1px solid rgba(255,255,255,0.07)";
-const BG_CARD = "rgba(255,255,255,0.03)";
-const PURPLE = "#7c6af7";
+const SIDEBAR_W = 270;
 
-const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
-const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: PURPLE, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
-const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
-const btn = { width: "100%", marginBottom: 4 };
-const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
-
-// ── sidebar toggle button ─────────────────────────────────────────────────────
 function CollapseBtn({ open, onClick, side }) {
   return (
     <button
       onClick={onClick}
       title={open ? "Collapse" : "Expand"}
-      style={{
-        position: "absolute",
-        top: "50%",
-        transform: "translateY(-50%)",
-        [side === "left" ? "right" : "left"]: -20,
-        zIndex: 10,
-        width: 32,
-        height: 64,
-        borderRadius: side === "left" ? "0 8px 8px 0" : "8px 0 0 8px",
-        background: "#13132a",
-        border: BORDER,
-        [side === "left" ? "borderLeft" : "borderRight"]: "none",
-        color: PURPLE,
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 12,
-        padding: 0,
-        lineHeight: 1,
-        transition: "background 0.2s",
-      }}
-      onMouseEnter={e => e.currentTarget.style.background = "rgba(124,106,247,0.15)"}
-      onMouseLeave={e => e.currentTarget.style.background = "#13132a"}
+      className={`collapse-btn collapse-btn-${side}`}
     >
-      {side === "left"
-        ? (open ? "◀" : "▶")
-        : (open ? "▶" : "◀")}
+      {side === "left" ? (open ? "◀" : "▶") : open ? "▶" : "◀"}
     </button>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section className="side-section">
+      <div className="side-section-title">{title}</div>
+      {children}
+    </section>
+  );
+}
+
+function DashboardCard({ title, children, className = "" }) {
+  return (
+    <div className={`dashboard-card ${className}`}>
+      <div className="section-title">{title}</div>
+      {children}
+    </div>
   );
 }
 
@@ -71,9 +64,12 @@ export default function App() {
   const [value, setValue] = useState("");
   const [deleteKey, setDeleteKey] = useState("");
   const [output, setOutput] = useState(null);
+
   const [nodeStatus, setNodeStatus] = useState(null);
   const [healthNodeId, setHealthNodeId] = useState("");
   const [clusterStatus, setClusterStatus] = useState(null);
+
+  const [theme, setTheme] = useState("dark");
 
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreviewRows, setCsvPreviewRows] = useState({});
@@ -90,447 +86,753 @@ export default function App() {
   const [simulationResult, setSimulationResult] = useState(null);
   const [consistencyResult, setConsistencyResult] = useState(null);
 
-  // ── sidebar open/close state ──────────────────────────────────────────────
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
-  const SIDEBAR_W = 270;
-  const COLLAPSED_W = 0;
+  const [partitioner, setPartitioner] = useState("Educational Hash");
 
   const replicatedCounts = csvImportResult?.replicated_counts_per_node ?? {};
-  const replicatedNodes = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
+
+  const replicatedNodes = useMemo(
+    () => Object.keys(replicatedCounts).sort(),
+    [replicatedCounts]
+  );
+
   const maxReplicated = useMemo(() => {
     const vals = Object.values(replicatedCounts);
     return vals.length ? Math.max(...vals) : 0;
   }, [replicatedCounts]);
 
-  // ── helpers ──────────────────────────────────────────────────────────────
   const fetchCluster = useCallback(async () => {
-    try { setClusterData(await getCluster()); } catch { /* ignore */ }
+    try {
+      const data = await getCluster();
+      setClusterData(data);
+    } catch {
+      // backend optional during frontend demo
+    }
   }, []);
 
-  const handleAddNode = useCallback(async (token) => {
-    const usedIds = new Set(nodes.map((n) => n.id));
-    const id = NAME_POOL.find((name) => !usedIds.has(name)) ?? `Node${Date.now()}`;
-    setNodes((prev) => [...prev, { id, token, status: "up" }]);
-    try { await addNode(id); await fetchCluster(); } catch (e) { console.error(e); }
-  }, [nodes, fetchCluster]);
+  const handleAddNode = useCallback(
+    async (token) => {
+      const usedIds = new Set(nodes.map((n) => n.id));
+      const id =
+        NAME_POOL.find((name) => !usedIds.has(name)) ?? `Node${Date.now()}`;
 
-  const handleRemoveNode = useCallback(async (nodeId) => {
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setSimulationResult(null); setConsistencyResult(null);
-    try { await removeNode(nodeId); await fetchCluster(); } catch (e) { console.error(e); }
-  }, [fetchCluster]);
+      setNodes((prev) => [...prev, { id, token, status: "up" }]);
+
+      try {
+        await addNode(id);
+        await fetchCluster();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [nodes, fetchCluster]
+  );
+
+  const handleRemoveNode = useCallback(
+    async (nodeId) => {
+      setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+      setSimulationResult(null);
+      setConsistencyResult(null);
+
+      try {
+        await removeNode(nodeId);
+        await fetchCluster();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [fetchCluster]
+  );
 
   const handleMoveNode = useCallback((nodeId, token) => {
-    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, token } : n));
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, token } : n))
+    );
   }, []);
 
   const toggleNodeStatus = useCallback((nodeId) => {
-    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, status: n.status === "up" ? "down" : "up" } : n));
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === nodeId
+          ? { ...n, status: n.status === "up" ? "down" : "up" }
+          : n
+      )
+    );
   }, []);
 
-  const runSimulation = useCallback(() => {
-    if (!key) return;
-    const result = simulatePlacement({ key, nodes, replicationFactor });
-    setSimulationResult(result);
-    if (result?.replicas)
-      setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
-  }, [key, nodes, replicationFactor, consistencyLevel]);
 
-  // Re-check consistency when CL changes while a simulation result exists
+
   useEffect(() => {
     if (simulationResult?.replicas) {
-      setConsistencyResult(checkConsistency({ replicas: simulationResult.replicas, consistencyLevel }));
+      setConsistencyResult(
+        checkConsistency({
+          replicas: simulationResult.replicas,
+          consistencyLevel,
+        })
+      );
     }
   }, [consistencyLevel, simulationResult]);
 
-  const parseCsvMeta = useCallback((text) => {
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    if (!lines.length) return null;
-    const firstL = lines[0];
-    const delim = firstL.includes(";") && !firstL.includes(",") ? ";" : ",";
-    let headers, dataLines;
-    if (csvHasHeader) {
-      headers = firstL.split(delim).map((c) => c.trim());
-      dataLines = lines.slice(1);
-    } else {
-      dataLines = lines;
-      if (csvColumnNames.trim()) {
-        const sep = csvColumnNames.includes(";") ? ";" : ",";
-        headers = csvColumnNames.split(sep).map((c) => c.trim());
-      } else {
-        headers = Array.from({ length: lines[0].split(delim).length }, (_, i) => `col${i + 1}`);
-      }
-    }
-    return { delim, headers, dataLines };
-  }, [csvHasHeader, csvColumnNames]);
+  const parseCsvMeta = useCallback(
+    (text) => {
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      if (!lines.length) return null;
 
-  const onFileChange = useCallback(async (e) => {
-    const file = e.target.files?.[0] ?? null;
-    setCsvFile(file); setCsvError(""); setCsvImportResult(null);
-    setCsvPreviewRows({}); setCsvDistribution([]);
-    if (!file) return;
-    const text = await file.text();
-    const meta = parseCsvMeta(text);
-    if (!meta) { setCsvError("Empty CSV."); return; }
-    const { delim, headers, dataLines } = meta;
-    setCsvColumns(headers); setPartitionKey(headers[0] ?? "");
-    const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
-    const preview = {};
-    for (let i = 0; i < Math.min(dataLines.length, 12); i++) {
-      const parts = dataLines[i].split(delim).map((c) => c.trim());
-      if (!parts[0]) continue;
-      const rowId = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
-      const rowObj = {};
-      headers.forEach((h, idx) => { if (parts[idx] !== undefined && parts[idx] !== "") rowObj[h] = parts[idx]; });
-      preview[rowId] = rowObj;
-    }
-    if (!Object.keys(preview).length) { setCsvError("Could not parse preview."); return; }
-    setCsvPreviewRows({ [tableName]: preview });
-  }, [parseCsvMeta]);
+      const firstLine = lines[0];
+      const delimiter =
+        firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
+
+      let headers = [];
+      let dataLines = [];
+
+      if (csvHasHeader) {
+        headers = firstLine.split(delimiter).map((c) => c.trim());
+        dataLines = lines.slice(1);
+      } else {
+        dataLines = lines;
+
+        if (csvColumnNames.trim()) {
+          const sep = csvColumnNames.includes(";") ? ";" : ",";
+          headers = csvColumnNames.split(sep).map((c) => c.trim());
+        } else {
+          headers = Array.from(
+            { length: lines[0].split(delimiter).length },
+            (_, i) => `col${i + 1}`
+          );
+        }
+      }
+
+      return { delimiter, headers, dataLines };
+    },
+    [csvHasHeader, csvColumnNames]
+  );
+
+  const onFileChange = useCallback(
+    async (e) => {
+      const file = e.target.files?.[0] ?? null;
+
+      setCsvFile(file);
+      setCsvError("");
+      setCsvImportResult(null);
+      setCsvPreviewRows({});
+      setCsvDistribution([]);
+
+      if (!file) return;
+
+      const text = await file.text();
+      const meta = parseCsvMeta(text);
+
+      if (!meta) {
+        setCsvError("Empty CSV.");
+        return;
+      }
+
+      const { delimiter, headers, dataLines } = meta;
+
+      setCsvColumns(headers);
+      setPartitionKey(headers[0] ?? "");
+
+      const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
+      const preview = {};
+
+      for (let i = 0; i < Math.min(dataLines.length, 12); i++) {
+        const parts = dataLines[i].split(delimiter).map((c) => c.trim());
+        if (!parts[0]) continue;
+
+        const rowId = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
+        const rowObj = {};
+
+        headers.forEach((h, idx) => {
+          if (parts[idx] !== undefined && parts[idx] !== "") {
+            rowObj[h] = parts[idx];
+          }
+        });
+
+        preview[rowId] = rowObj;
+      }
+
+      if (!Object.keys(preview).length) {
+        setCsvError("Could not parse preview.");
+        return;
+      }
+
+      setCsvPreviewRows({ [tableName]: preview });
+    },
+    [parseCsvMeta]
+  );
 
   const onImportCsv = useCallback(async () => {
-    if (!csvFile) { setCsvError("Choose a CSV file first."); return; }
-    if (!partitionKey) { setCsvError("Choose a partition key."); return; }
-    setCsvError("");
-
-    let backendResult = null;
-    try {
-      backendResult = await importCsv(csvFile, csvHasHeader, csvColumnNames);
-    } catch (err) {
-      setCsvError(err.message ?? "Backend import failed");
+    if (!csvFile) {
+      setCsvError("Choose a CSV file first.");
       return;
     }
 
+    if (!partitionKey) {
+      setCsvError("Choose a partition key.");
+      return;
+    }
+
+    setCsvError("");
+
     const text = await csvFile.text();
     const meta = parseCsvMeta(text);
-    if (!meta) { setCsvError("Empty CSV."); return; }
-    const { delim, headers, dataLines } = meta;
-    const dist = [];
+
+    if (!meta) {
+      setCsvError("Empty CSV.");
+      return;
+    }
+
+    const { delimiter, headers, dataLines } = meta;
+
+    const table = {};
+    const distribution = [];
+    const replicatedCountsPerNode = {};
+
     dataLines.forEach((line, i) => {
-      const parts = line.split(delim).map((c) => c.trim());
+      const parts = line.split(delimiter).map((c) => c.trim());
+
       const row = {};
-      headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
-      const pval = row[partitionKey];
-      if (!pval) return;
-      const placement = simulatePlacement({ key: String(pval), nodes, replicationFactor });
-      dist.push({ rowId: `row${i + 1}`, partitionValue: pval, hash: placement?.hash, primaryNode: placement?.primaryNode?.id, replicas: placement?.replicas ?? [] });
+      headers.forEach((h, idx) => {
+        row[h] = parts[idx] ?? "";
+      });
+
+      const rowId = `row${i + 1}`;
+      table[rowId] = row;
+
+      const partitionValue = row[partitionKey];
+      if (!partitionValue) return;
+
+      const placement = simulatePlacement({
+        key: String(partitionValue),
+        nodes,
+        replicationFactor,
+      });
+
+      placement?.replicas?.forEach((replica) => {
+        replicatedCountsPerNode[replica.id] =
+          (replicatedCountsPerNode[replica.id] ?? 0) + 1;
+      });
+
+      distribution.push({
+        rowId,
+        partitionValue,
+        hash: placement?.hash,
+        primaryNode: placement?.primaryNode?.id,
+        replicas: placement?.replicas ?? [],
+      });
     });
 
-    const mergedResult = { ...backendResult };
-    setCsvImportResult(mergedResult);
-    setOutput(mergedResult);
-    setCsvDistribution(dist);
+    const result = {
+      table,
+      rows_imported: Object.keys(table).length,
+      rows_skipped: 0,
+      replicated_counts_per_node: replicatedCountsPerNode,
+    };
 
-    await fetchCluster();
-  }, [csvFile, partitionKey, csvHasHeader, csvColumnNames, parseCsvMeta, nodes, replicationFactor, fetchCluster]);
+    setCsvImportResult(result);
+    setOutput(result);
+    setCsvDistribution(distribution);
+  }, [
+    csvFile,
+    partitionKey,
+    parseCsvMeta,
+    nodes,
+    replicationFactor,
+  ]);
 
-  // ── sidebar content styles ────────────────────────────────────────────────
+  const runSimulation = useCallback(async () => {
+    if (nodes.length === 0) {
+      setOutput({ error: "Add at least one node to the ring first." });
+      return;
+    }
+
+    // MODE CSV
+    if (csvFile && partitionKey) {
+      await onImportCsv();
+
+      setOutput({
+        mode: "CSV simulation",
+        message: "CSV rows distributed using selected partition key.",
+        partitionKey,
+      });
+
+      return;
+    }
+
+    // MODE SINGLE KEY
+    if (!key) {
+      setOutput({
+        error:
+          "Enter a key for single write simulation, or import a CSV and choose a partition key.",
+      });
+      return;
+    }
+
+    const result = simulatePlacement({
+      key,
+      nodes,
+      replicationFactor,
+    });
+
+    setSimulationResult(result);
+
+    if (result?.replicas) {
+      setConsistencyResult(
+        checkConsistency({
+          replicas: result.replicas,
+          consistencyLevel,
+        })
+      );
+    }
+
+    setOutput({
+      mode: "Single key simulation",
+      key,
+      hash: result?.hash,
+      primaryNode: result?.primaryNode?.id,
+      replicas: result?.replicas?.map((node) => node.id),
+    });
+  }, [
+    nodes,
+    csvFile,
+    partitionKey,
+    onImportCsv,
+    key,
+    replicationFactor,
+    consistencyLevel,
+  ]);
+
   const sidebarStyle = (open, side) => ({
-    position: "fixed",
-    top: 48,
-    [side]: 0,
-    height: "calc(100vh - 48px)",
     width: SIDEBAR_W,
-    zIndex: 20,
-    background: "#0a0a14",
-    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
-    transform: open ? "translateX(0)" : side === "left" ? `translateX(-100%)` : `translateX(100%)`,
-    ...(side === "left" ? { borderRight: BORDER } : { borderLeft: BORDER }),
+    transform: open
+      ? "translateX(0)"
+      : side === "left"
+        ? "translateX(-100%)"
+        : "translateX(100%)",
   });
 
-  const sidebarInnerStyle = {
-    width: SIDEBAR_W,
-    height: "100%",
-    overflowX: "hidden",
-    overflowY: "auto",
-    padding: "16px 14px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 0,
-    boxSizing: "border-box",
-  };
-
-  // ── render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{
-      display: "flex", flexDirection: "column",
-      height: "100vh", overflow: "hidden",
-      background: "#0a0a14", color: "#fff",
-      fontFamily: "'JetBrains Mono','Fira Code',monospace",
-    }}>
-
-      {/* ── header ── */}
-      <header style={{
-        height: 48, flexShrink: 0,
-        display: "flex", alignItems: "center", gap: 12, padding: "0 20px",
-        borderBottom: BORDER, background: "rgba(255,255,255,0.02)",
-      }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: PURPLE, letterSpacing: 1 }}>CassandraEdu</span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 2 }}>SIMULATOR</span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+    <div className={`app-shell ${theme}`}>
+      <header className="app-header">
+        <span className="app-logo">CassandraEdu</span>
+        <span className="app-subtitle">SIMULATOR</span>
+        <button
+          className="theme-toggle"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? "☀ Light" : "🌙 Dark"}
+        </button>
+        <span className="app-node-count">
           {nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring
         </span>
       </header>
 
-      {/* ── body row ── */}
-      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+      <div className="app-body">
+        <aside className="sidebar sidebar-left" style={sidebarStyle(leftOpen, "left")}>
+          <CollapseBtn
+            open={leftOpen}
+            onClick={() => setLeftOpen((o) => !o)}
+            side="left"
+          />
 
-        {/* ══ LEFT SIDEBAR ══ */}
-        <div style={{ position: "fixed", top: 48, left: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
-          <div style={sidebarStyle(leftOpen, "left")}>
-            <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
-            <div style={sidebarInnerStyle}>
+          <div className="sidebar-inner">
+            <Section title="Cluster">
+              <button
+                className="btn-full"
+                onClick={() =>
+                  getCluster()
+                    .then((r) => {
+                      setOutput(r);
+                      setClusterData(r);
+                    })
+                    .catch((e) => setOutput({ error: e.message }))
+                }
+              >
+                Show Cluster
+              </button>
+            </Section>
 
-              <Section title="Cluster">
-                <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); }).catch((e) => setOutput({ error: e.message }))}>Show Cluster</button>
-              </Section>
+            <Section title="CSV Import">
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={csvHasHeader}
+                  onChange={(e) => {
+                    setCsvHasHeader(e.target.checked);
+                    setCsvPreviewRows({});
+                  }}
+                />
+                Has header row
+              </label>
 
-              <Section title="CSV Import">
-                <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                  <input type="checkbox" checked={csvHasHeader}
-                    onChange={(e) => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); }} />
-                  Has header row
-                </label>
-                {!csvHasHeader && (
-                  <input style={inp} placeholder="col1;col2;col3" value={csvColumnNames}
-                    onChange={(e) => { setCsvColumnNames(e.target.value); setCsvPreviewRows({}); }} />
-                )}
-                <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
-                {csvColumns.length > 0 && (
-                  <>
-                    <label style={lbl}>Partition Key</label>
-                    <select style={inp} value={partitionKey} onChange={(e) => setPartitionKey(e.target.value)}>
-                      {csvColumns.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </>
-                )}
-                <button style={btn} onClick={onImportCsv}>Import CSV</button>
-                {csvError && <pre style={{ color: "#f76a6a", fontSize: 10 }}>{csvError}</pre>}
-                {Object.keys(csvPreviewRows).length > 0 && (
-                  <>
-                    <label style={{ ...lbl, marginTop: 8 }}>Preview (first rows)</label>
-                    <pre style={{ maxHeight: 160, overflow: "auto", fontSize: 9 }}>
-                      {JSON.stringify(csvPreviewRows, null, 2)}
-                    </pre>
-                  </>
-                )}
-              </Section>
-
-
-
-              {csvImportResult?.table && (
-                <Section title="Imported Table">
-                  <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 9 }}>
-                    {JSON.stringify(csvImportResult.table, null, 2)}
-                  </pre>
-                  <p style={{ opacity: 0.35, fontSize: 10, marginTop: 4 }}>
-                    {csvImportResult.rows_imported} rows imported
-                    {csvImportResult.rows_skipped > 0 && `, ${csvImportResult.rows_skipped} skipped`}
-                  </p>
-                </Section>
+              {!csvHasHeader && (
+                <input
+                  placeholder="col1;col2;col3"
+                  value={csvColumnNames}
+                  onChange={(e) => {
+                    setCsvColumnNames(e.target.value);
+                    setCsvPreviewRows({});
+                  }}
+                />
               )}
 
+              <input type="file" accept=".csv,text/csv" onChange={onFileChange} />
+
+              {csvColumns.length > 0 && (
+                <>
+                  <label className="field-label">Partition Key</label>
+                  <select
+                    value={partitionKey}
+                    onChange={(e) => setPartitionKey(e.target.value)}
+                  >
+                    {csvColumns.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+
+              <button className="btn-full" onClick={onImportCsv}>
+                Import CSV
+              </button>
+
+              {csvError && <pre className="error-box">{csvError}</pre>}
+
+              {Object.keys(csvPreviewRows).length > 0 && (
+                <>
+                  <label className="field-label">Preview first rows</label>
+                  <pre className="preview-box">
+                    {JSON.stringify(csvPreviewRows, null, 2)}
+                  </pre>
+                </>
+              )}
+            </Section>
+
+            {csvImportResult?.table && (
+              <Section title="Imported Table">
+                <pre className="preview-box large">
+                  {JSON.stringify(csvImportResult.table, null, 2)}
+                </pre>
+                <p className="muted-text">
+                  {csvImportResult.rows_imported} rows imported
+                  {csvImportResult.rows_skipped > 0 &&
+                    `, ${csvImportResult.rows_skipped} skipped`}
+                </p>
+              </Section>
+            )}
+          </div>
+        </aside>
+
+        <main
+          className={`app-main ${leftOpen ? "with-left" : ""} ${rightOpen ? "with-right" : ""
+            }`}
+        >
+          <div className="hint-bar">
+            <span>
+              <strong>Drag +</strong> → add node
+            </span>
+            <span>
+              <strong>Hover</strong> → inspect data
+            </span>
+            <span>
+              <strong>× button</strong> → remove node
+            </span>
+          </div>
+
+          <div className="ring-stage">
+            <TokenRing
+              nodes={nodes}
+              cluster={clusterData}
+              onAddNode={handleAddNode}
+              onRemoveNode={handleRemoveNode}
+              onMoveNode={handleMoveNode}
+              simulationResult={simulationResult}
+              csvDistribution={csvDistribution}
+            />
+            <div className="ring-legend">
+              <div className="legend-item">
+                <span className="legend-dot node"></span>
+                <span>Node</span>
+              </div>
+
+              <div className="legend-item">
+                <span className="legend-dot primary"></span>
+                <span>Primary Replica</span>
+              </div>
+
+              <div className="legend-item">
+                <span className="legend-dot replica"></span>
+                <span>Replica</span>
+              </div>
+
+              <div className="legend-item">
+                <span className="legend-dot csv"></span>
+                <span>CSV Partition Hash</span>
+              </div>
+
+              <div className="legend-item">
+                <span className="legend-dot down"></span>
+                <span>Node Down</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* ══ CENTER ══ */}
-        <main style={{
-          flex: 1, overflow: "auto",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "24px 20px", gap: 16,
-          minWidth: 0,
-          marginLeft: leftOpen ? SIDEBAR_W : 0,
-          marginRight: rightOpen ? SIDEBAR_W : 0,
-          transition: "margin 0.28s cubic-bezier(0.4,0,0.2,1)",
-        }}>
-          {/* hint bar */}
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
-            <span><strong style={{ color: PURPLE }}>Drag +</strong> → add node</span>
-            <span><strong style={{ color: PURPLE }}>Hover</strong> → inspect data</span>
-            <span><strong style={{ color: PURPLE }}>× button</strong> → remove node</span>
-          </div>
-
-          {/* ring */}
-          <div style={{ width: "100%", maxWidth: 900 }}>
-            <TokenRing
-              nodes={nodes} cluster={clusterData}
-              onAddNode={handleAddNode} onRemoveNode={handleRemoveNode} onMoveNode={handleMoveNode}
-              simulationResult={simulationResult} csvDistribution={csvDistribution}
-            />
-          </div>
-
-          {/* bottom strip */}
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {/*output*/}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Output</div>
-              {output
-                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+          <div className="card-row">
+            <DashboardCard title="Output">
+              {output ? (
+                <div className="json-output">
                   {JSON.stringify(output, null, 2)}
                 </div>
-                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
-            </div>
-            {/* simulation settings */}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Settings</div>
-              <label style={lbl}>Replication Factor</label>
-              <select style={inp} value={replicationFactor} onChange={(e) => setReplicationFactor(Number(e.target.value))}>
-                <option value={1}>RF = 1</option><option value={2}>RF = 2</option><option value={3}>RF = 3</option>
+              ) : (
+                <span className="muted-text">No output yet.</span>
+              )}
+            </DashboardCard>
+
+            <DashboardCard title="Simulation Settings">
+              <label className="field-label">Replication Factor</label>
+              <select
+                value={replicationFactor}
+                onChange={(e) => setReplicationFactor(Number(e.target.value))}
+              >
+                <option value={1}>RF = 1</option>
+                <option value={2}>RF = 2</option>
+                <option value={3}>RF = 3</option>
               </select>
-              <label style={lbl}>Consistency Level</label>
-              <select style={inp} value={consistencyLevel} onChange={(e) => setConsistencyLevel(e.target.value)}>
-                <option value="ONE">ONE</option><option value="QUORUM">QUORUM</option><option value="ALL">ALL</option>
+
+              <label className="field-label">Consistency Level</label>
+              <select
+                value={consistencyLevel}
+                onChange={(e) => setConsistencyLevel(e.target.value)}
+              >
+                <option value="ONE">ONE</option>
+                <option value="QUORUM">QUORUM</option>
+                <option value="ALL">ALL</option>
               </select>
+
               <button
-                style={{ ...btn, marginTop: 4, background: "rgba(124,106,247,0.12)", border: `1px solid ${PURPLE}`, color: PURPLE, marginBottom: 0 }}
-                onClick={runSimulation} disabled={!key || nodes.length === 0}>
+                className="btn-full btn-primary"
+                onClick={runSimulation}
+                disabled={!key || nodes.length === 0}
+              >
                 ▶ Simulate Write
               </button>
-            </div>
+            </DashboardCard>
 
-            {/* simulation result */}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Result</div>
+            <DashboardCard title="Simulation Result">
               {simulationResult ? (
-                <div style={{ fontSize: 11, lineHeight: 1.9 }}>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Key: </span>{simulationResult.key}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Hash: </span>{simulationResult.hash}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Primary: </span>{simulationResult.primaryNode?.id ?? "—"}</div>
+                <div className="simulation-info">
+                  <div>
+                    <span>Key:</span> {simulationResult.key}
+                  </div>
+                  <div>
+                    <span>Hash:</span> {simulationResult.hash}
+                  </div>
+                  <div>
+                    <span>Primary:</span>{" "}
+                    {simulationResult.primaryNode?.id ?? "—"}
+                  </div>
+
                   {simulationResult.replicas.map((n, i) => (
-                    <div key={n.id} style={{ color: PURPLE }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
+                    <div key={n.id} className="replica-line">
+                      {i === 0 ? "★ Primary" : `Replica ${i}`}: {n.id}
+                    </div>
                   ))}
+
                   {consistencyResult && (
-                    <div style={{
-                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
-                      background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
-                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
-                    }}>
-                      <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
-                        {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
-                      </div>
-                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>
-                        {consistencyResult.consistencyLevel} · needs {consistencyResult.required} · alive {consistencyResult.aliveReplicas}/{consistencyResult.required}
-                      </div>
+                    <div
+                      className={`consistency-box ${consistencyResult.success ? "success" : "failed"
+                        }`}
+                    >
+                      <strong>
+                        {consistencyResult.success
+                          ? "✓ WRITE SUCCESS"
+                          : "✗ WRITE FAILED"}
+                      </strong>
+                      <small>
+                        {consistencyResult.consistencyLevel} · needs{" "}
+                        {consistencyResult.required} · alive{" "}
+                        {consistencyResult.aliveReplicas}/
+                        {consistencyResult.required}
+                      </small>
                     </div>
                   )}
                 </div>
               ) : (
-                <p style={{ opacity: 0.3, fontSize: 11 }}>
-                  {nodes.length === 0 ? "Add nodes first." : "Enter a key on the right and simulate."}
+                <p className="muted-text">
+                  {nodes.length === 0
+                    ? "Add nodes first."
+                    : "Enter a key on the right and simulate."}
                 </p>
               )}
-            </div>
+            </DashboardCard>
           </div>
 
-          {/* bottom strip row 2 — relocated panels */}
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {/* Node Failure Sim */}
-            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
-              <div style={h3}>Node Failure Sim</div>
-              {nodes.length === 0
-                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
-                : nodes.map((node) => (
-                  <button key={node.id}
-                    style={{
-                      ...btn,
-                      background: node.status === "down" ? "#8b2020" : undefined,
-                      color: node.status === "down" ? "#fff" : undefined,
-                      border: node.status === "down" ? "1px solid #b33030" : undefined,
-                      fontWeight: node.status === "down" ? 700 : undefined,
-                    }}
-                    onClick={() => toggleNodeStatus(node.id)}>
-                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
+          <div className="card-row">
+            <DashboardCard title="Node Failure Sim">
+              {nodes.length === 0 ? (
+                <p className="muted-text">Add nodes via the ring first.</p>
+              ) : (
+                nodes.map((node) => (
+                  <button
+                    key={node.id}
+                    className={`btn-full ${node.status === "down" ? "btn-danger" : ""
+                      }`}
+                    onClick={() => toggleNodeStatus(node.id)}
+                  >
+                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"}{" "}
+                    {node.id}
                   </button>
-                ))}
-            </div>
+                ))
+              )}
+            </DashboardCard>
 
-            {/* Cluster Status & Node Health */}
-            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
-              <div style={h3}>Cluster & Node Health</div>
-              <button style={{ ...btn, marginBottom: 6 }} onClick={() => getClusterStatus().then(setClusterStatus).catch((e) => setClusterStatus({ error: e.message }))}>Cluster Status</button>
-              {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input style={{ ...inp, flex: 1, marginBottom: 0 }} placeholder="NodeA" value={healthNodeId} onChange={(e) => setHealthNodeId(e.target.value)} />
-                <button style={{ ...btn, width: "auto", flex: "0 0 auto", marginBottom: 0, padding: "6px 10px", fontSize: 10 }}
-                  onClick={() => getNodeHealth(healthNodeId).then(setNodeStatus).catch((e) => setNodeStatus({ error: e.message }))}>
+            <DashboardCard title="Cluster & Node Health">
+              <button
+                className="btn-full"
+                onClick={() =>
+                  getClusterStatus()
+                    .then(setClusterStatus)
+                    .catch((e) => setClusterStatus({ error: e.message }))
+                }
+              >
+                Cluster Status
+              </button>
+
+              {clusterStatus && (
+                <pre className="mini-output">
+                  {JSON.stringify(clusterStatus, null, 2)}
+                </pre>
+              )}
+
+              <div className="inline-form">
+                <input
+                  placeholder="NodeA"
+                  value={healthNodeId}
+                  onChange={(e) => setHealthNodeId(e.target.value)}
+                />
+                <button
+                  onClick={() =>
+                    getNodeHealth(healthNodeId)
+                      .then(setNodeStatus)
+                      .catch((e) => setNodeStatus({ error: e.message }))
+                  }
+                >
                   Check
                 </button>
               </div>
-              {nodeStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
-            </div>
 
-            {/* Distribution / Node */}
+              {nodeStatus && (
+                <pre className="mini-output">
+                  {JSON.stringify(nodeStatus, null, 2)}
+                </pre>
+              )}
+            </DashboardCard>
+
             {replicatedNodes.length > 0 && (
-              <div style={{ ...card, flex: 2, minWidth: 250, marginBottom: 0 }}>
-                <div style={h3}>Distribution / Node</div>
+              <DashboardCard title="Distribution / Node">
                 {replicatedNodes.map((n) => {
                   const count = replicatedCounts[n] ?? 0;
-                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  const pct =
+                    maxReplicated > 0
+                      ? Math.round((count / maxReplicated) * 100)
+                      : 0;
+
                   return (
-                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
-                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, background: PURPLE, height: 10, transition: "width .4s" }} />
+                    <div key={n} className="distribution-row">
+                      <div>{n}</div>
+                      <div className="distribution-track">
+                        <div
+                          className="distribution-fill"
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
-                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
+                      <div>{count}</div>
                     </div>
                   );
                 })}
-              </div>
+              </DashboardCard>
             )}
           </div>
         </main>
 
-        {/* ══ RIGHT SIDEBAR ══ */}
-        <div style={{ position: "fixed", top: 48, right: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
-          <div style={sidebarStyle(rightOpen, "right")}>
-            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
-            <div style={sidebarInnerStyle}>
+        <aside className="sidebar sidebar-right" style={sidebarStyle(rightOpen, "right")}>
+          <CollapseBtn
+            open={rightOpen}
+            onClick={() => setRightOpen((o) => !o)}
+            side="right"
+          />
 
-              <Section title="Write / Read">
-                <label style={lbl}>Key</label>
-                <input style={inp} placeholder="e.g. user:42" value={key} onChange={(e) => setKey(e.target.value)} />
-                <label style={lbl}>Value</label>
-                <input style={inp} placeholder="e.g. Alice" value={value} onChange={(e) => setValue(e.target.value)} />
-                <button style={btn} onClick={() => writeData(key, value).then((r) => { setOutput(r); fetchCluster(); }).catch((e) => setOutput({ error: e.message }))}>Write</button>
-                <button style={btn} onClick={() => readData(key).then(setOutput).catch((e) => setOutput({ error: e.message }))}>Read</button>
-              </Section>
+          <div className="sidebar-inner">
+            <Section title="Write / Read">
+              <label className="field-label">Key</label>
+              <input
+                placeholder="e.g. user:42"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+              />
 
-              <Section title="Delete">
-                <label style={lbl}>Key</label>
-                <input style={inp} placeholder="key to delete" value={deleteKey} onChange={(e) => setDeleteKey(e.target.value)} />
-                <button style={{ ...btn, color: "#f76a6a" }}
-                  onClick={() => deleteData(deleteKey).then((r) => { setOutput(r); fetchCluster(); }).catch((e) => setOutput({ error: e.message }))}>
-                  Delete
-                </button>
-              </Section>
+              <label className="field-label">Value</label>
+              <input
+                placeholder="e.g. Alice"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+              />
 
+              <button
+                className="btn-full"
+                onClick={() =>
+                  writeData(key, value)
+                    .then((r) => {
+                      setOutput(r);
+                      fetchCluster();
+                    })
+                    .catch((e) => setOutput({ error: e.message }))
+                }
+              >
+                Write
+              </button>
 
+              <button
+                className="btn-full"
+                onClick={() =>
+                  readData(key)
+                    .then(setOutput)
+                    .catch((e) => setOutput({ error: e.message }))
+                }
+              >
+                Read
+              </button>
+            </Section>
 
-            </div>
+            <Section title="Delete">
+              <label className="field-label">Key</label>
+              <input
+                placeholder="key to delete"
+                value={deleteKey}
+                onChange={(e) => setDeleteKey(e.target.value)}
+              />
+
+              <button
+                className="btn-full btn-danger"
+                onClick={() =>
+                  deleteData(deleteKey)
+                    .then((r) => {
+                      setOutput(r);
+                      fetchCluster();
+                    })
+                    .catch((e) => setOutput({ error: e.message }))
+                }
+              >
+                Delete
+              </button>
+            </Section>
           </div>
-        </div>
-
+        </aside>
       </div>
-    </div>
-  );
-}
-
-// ── tiny section wrapper ─────────────────────────────────────────────────────
-function Section({ title, children }) {
-  return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{
-        fontSize: 10, letterSpacing: 2, textTransform: "uppercase",
-        color: PURPLE, fontWeight: 700,
-        padding: "10px 2px 8px",
-        borderBottom: "1px solid rgba(124,106,247,0.15)",
-        marginBottom: 10,
-      }}>{title}</div>
-      {children}
     </div>
   );
 }
