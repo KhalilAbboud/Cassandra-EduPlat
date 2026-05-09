@@ -26,6 +26,9 @@ def delete_cluster():
 
 
 # this one resets the cluster completely on UI Refresh or docker-compose down/up or upon pressing reset button on UI
+# if the users wants to keep the cluster running but just want to remove the nodes, they can use the delete endpoint instead and then create new nodes with the create endpoint
+# but this ones serves as a hard reset in case a node crashes, or he want to switch to a different cluster configuration, or just want to start fresh without any nodes running, 
+# it will remove all the nodes and the network as well, so that when the user creates a new cluster, it will be created from scratch without any leftover containers or network issues
 @router.delete("/reset")
 def reset_cluster():
     from services.dockerService import get_client, NETWORK_NAME

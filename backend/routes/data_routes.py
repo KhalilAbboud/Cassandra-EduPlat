@@ -9,6 +9,8 @@ class DataItem(BaseModel):
     key: str
     value: str
 
+# most of these are CSV related methods, write, read and delete, which interact with the database inside the containers
+# so far only csv is supported "duh"
 @router.post("/write")
 def write_data_route(item: DataItem):
     try:
@@ -29,6 +31,12 @@ def delete_data_route(key: str):
         return delete_data(key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# this is the import method, which is used to import data from a CSV file into the database
+# basically you can import a CSV file into the database and it will be replicated across the cluster
+# it uses our internal simulation logic to determine where to replicate the data, in a real cassandra cluster
+# idk see if you wanna change it or not, it works cuz data is in the docker volumes, altought the replication factor is fixed here
+# the frontend dev should implement a way to manually select the RF upon importing the CSV
 
 @router.post("/import_csv")
 async def import_csv(
@@ -83,7 +91,7 @@ async def import_csv(
         if not pk_value:
             skipped += 1
             continue
-        row_id = pk_value  # ← was f"row{c0}" — now just the raw value e.g. "2"
+        row_id = pk_value  # ← was f"row{c0}" — now just the raw value of the partition key e.g. "2"
         row_obj = {}
         for idx, col_val in enumerate(row):
             col_name = header_cols[idx] if idx < len(header_cols) else f"col{idx+1}"

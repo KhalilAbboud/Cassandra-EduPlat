@@ -128,3 +128,8 @@ def get_nodes_in_network():
     network.reload()  
     print(f"📋 Nodes in {NETWORK_NAME}: {[container.name for container in network.containers]}")
     return list(network.containers)  
+
+# i think i didnt modify as much here, i prolly didnt even modify anything beside adding
+# "CASSANDRA_CONSISTENT_RANGEMOVEMENT": "false" so cassandra doesnt go crazy
+# cuz When its set to false, the joining node is allowed to stream data from any available replica rather than the specific one it is taking over for
+# an yea

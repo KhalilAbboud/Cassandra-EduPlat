@@ -7,7 +7,11 @@ from fastapi import HTTPException
 
 EXCLUDED = {"cassandraeduplat-frontend-1", "cassandraeduplat-backend-1"}
 
-
+# this allows to wait for a node to join the cluster.
+# it will keep checking the status of the nodes in the cluster.
+# and it will wait until the expected number of nodes are in "up" state.
+# if the expected number of nodes are not in "up" state within the timeout period, then it will return a supposed 'False' but it crashes the program :shrug:
+#
 def wait_for_cluster_join(expected_count: int, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
@@ -29,6 +33,13 @@ def wait_for_cluster_join(expected_count: int, timeout=180):
     return False
 
 
+# this allows to wait for a node to be removed from the cluster.
+# so the user will not face the issue of the node not being removed from the cluster.
+
+# same logic as wait_for_cluster_join but for removing a node
+# this is needed because the node is not removed from the cluster even after the docker container is removed
+# it basically means that the node is not removed from the cluster gossip
+
 def wait_for_removenode_complete(peer, host_id: str, timeout=120) -> bool:
     """Block until the dead node's host ID disappears from nodetool status."""
     start = time.time()
@@ -48,6 +59,9 @@ def wait_for_removenode_complete(peer, host_id: str, timeout=120) -> bool:
     print(f"⚠️ Timed out waiting for removenode {host_id} to complete")
     return False
 
+# it makes sure that no nodes are in "down" state before adding a new node.
+# this is because if there are nodes in "down" state, the new node will not join the cluster.
+# if that's the case then the new node will be stuck in "joining" state and will never join the cluster.
 
 def wait_for_no_down_nodes(timeout=60) -> bool:
     """Before adding a new node, ensure no DN nodes linger in the cluster."""
@@ -67,7 +81,7 @@ def wait_for_no_down_nodes(timeout=60) -> bool:
         time.sleep(5)
     return False
 
-
+# node creation logic, basic.
 def create_node(payload: NodeCreate) -> NodeResponse:
     node_id = str(uuid.uuid4())
 
@@ -113,7 +127,7 @@ def create_node(payload: NodeCreate) -> NodeResponse:
         tokens=[]
     )
 
-
+# get all nodes ?
 def get_all_nodes() -> list[NodeResponse]:
     containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
     result = []
@@ -132,6 +146,7 @@ def get_all_nodes() -> list[NodeResponse]:
     return result
 
 
+# get node details ?
 def get_node(node_id: str) -> NodeResponse | None:
     containers = [c for c in get_nodes_in_network() if c.name not in EXCLUDED]
     for container in containers:
@@ -149,6 +164,8 @@ def get_node(node_id: str) -> NodeResponse | None:
             )
     return None
 
+# fixed the nodes crashing when removing, or the other exiting after readding a node that got deleted prior one that got craeted
+# in simple term, node a created, b created, node c created, node b deleted, then node b is readded, before the node imidiately exits, now it works
 
 def delete_node(node_id: str) -> bool:
     try:
