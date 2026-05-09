@@ -8,16 +8,20 @@ from routes.data_routes import router as data_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield  # startup
-    # shutdown cleanup
+    yield
+    print("🧹 Shutting down — cleaning up cluster...")
     try:
         client = get_client()
-        for container in client.containers.list(filters={"network": "cassandra-net"}):
-            print(f"🧹 Stopping {container.name}")
-            container.stop()
-            container.remove()
-        client.networks.get("cassandra-net").remove()
-        print("🧹 cassandra-net removed")
+        containers = client.containers.list(filters={"network": "cassandra-net"})
+        for container in containers:
+            if container.name not in {"cassandraeduplat-frontend-1", "cassandraeduplat-backend-1"}:
+                print(f"🧹 Removing {container.name}")
+                container.remove(force=True)   # ← force=True skips stop, much faster
+        try:
+            client.networks.get("cassandra-net").remove()
+            print("🧹 Network removed")
+        except Exception:
+            pass
     except Exception as e:
         print(f"Cleanup warning: {e}")
 

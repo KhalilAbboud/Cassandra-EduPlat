@@ -1,11 +1,11 @@
 export function hashKey(key) {
-    let hash = 0;
-
+    let h = 0x811c9dc5; // FNV-1a — distributes sequential keys much more evenly
     for (let i = 0; i < key.length; i++) {
-        hash = (hash * 31 + key.charCodeAt(i)) % 10000;
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+        h = h >>> 0;
     }
-
-    return hash;
+    return h % 10000;
 }
 
 export function simulatePlacement({ key, nodes, replicationFactor }) {

@@ -25,6 +25,7 @@ const TICKS = [0, 1250, 2500, 3750, 5000, 6250, 7500, 8750];
 export default function TokenRing({
   nodes = [], cluster = {},
   onAddNode, onRemoveNode, onMoveNode,
+  disabled = false,
   simulationResult, csvDistribution = [],
 }) {
   const svgRef = useRef(null);
@@ -55,13 +56,16 @@ export default function TokenRing({
 
   const onPaletteMD = useCallback((e) => {
     if (nodes.length >= 6) return;
+    if (disabled) return;
     e.preventDefault();
     setPalDragging(true);
     setGhostXY(toSvgXY(e));
-  }, [toSvgXY, nodes.length]);
+  }, [toSvgXY, nodes.length, disabled]);  // ← also add disabled to deps
 
-  const onNodeMD = useCallback((e, nodeId, nodeToken) => {
+  const onNodeMD = useCallback((e, nodeId, nodeToken, isJoining) => {
     e.stopPropagation();
+    e.preventDefault();
+    if (isJoining) return;   // ← don't allow dragging a joining node
     movingIdRef.current = nodeId;
     setMovingToken(nodeToken);
     setHoveredId(null);
@@ -127,8 +131,12 @@ export default function TokenRing({
   const highlightSet = new Set(simulationResult?.replicas?.map((r) => r.id) ?? []);
   const primaryId = simulationResult?.primaryNode?.id;
   const csvCountByNode = {};
+  const csvDataByNode = {};
   csvDistribution.forEach((d) => {
-    d.replicas?.forEach((r) => { csvCountByNode[r.id] = (csvCountByNode[r.id] ?? 0) + 1; });
+    d.replicas?.forEach((r) => {
+      if (!csvDataByNode[r.id]) csvDataByNode[r.id] = [];
+      csvDataByNode[r.id].push({ key: String(d.partitionValue), value: d.rowId });
+    });
   });
   const nodeColorMap = {};
   nodes.forEach((n, i) => { nodeColorMap[n.id] = NODE_COLORS[i % NODE_COLORS.length]; });
@@ -194,14 +202,17 @@ export default function TokenRing({
           const isPrimary = node.id === primaryId;
           const isDown = node.status === "down";
           const color = nodeColorMap[node.id] ?? "#7c6af7";
+          const isJoining = node.status === "joining";
+          const displayColor = isJoining ? "#f7c76a" : color;
           const csvBadge = csvCountByNode[node.id] ?? 0;
-          const dataLen = (cluster[node.id] ?? []).length;
+          const nodeData = (cluster[node.id]?.length > 0 ? cluster[node.id] : null) ?? csvDataByNode[node.id] ?? [];
+          const dataLen = nodeData.length;
           const isHovered = hoveredId === node.id && !isMoving;
 
           return (
             <g key={node.id}
-              style={{ cursor: isMoving ? "grabbing" : "grab" }}
-              onMouseDown={(e) => onNodeMD(e, node.id, node.token)}
+              style={{ cursor: isJoining ? "wait" : isMoving ? "grabbing" : "grab" }}
+              onMouseDown={(e) => onNodeMD(e, node.id, node.token, isJoining)}
               onMouseEnter={(e) => onNodeEnter(node.id, e)}
               onMouseLeave={onNodeLeave}
             >
@@ -209,26 +220,65 @@ export default function TokenRing({
                 <circle cx={pos.x} cy={pos.y} r={NODE_R + 8}
                   fill="none" stroke={color} strokeWidth={1.5} opacity={0.35} />
               )}
+
+              {isJoining && (
+                <circle cx={pos.x} cy={pos.y} r={NODE_R + 10}
+                  fill="none" stroke="#f7c76a" strokeWidth={1.5}
+                  strokeDasharray="4 3" opacity={0.6}
+                  style={{ animation: "spin 3s linear infinite", transformOrigin: `${pos.x}px ${pos.y}px` }}
+                />
+              )}
+
               <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={isDown ? "#2a2a2a" : `${color}22`}
-                stroke={color}
+                fill={isDown ? "#13132a" : `${displayColor}22`}
+                stroke={displayColor}
                 strokeWidth={isMoving ? 2.5 : isPrimary ? 2.5 : 1.5}
                 strokeDasharray={isMoving ? "5 3" : "none"}
               />
-              <text x={pos.x} y={pos.y - 2} textAnchor="middle" dominantBaseline="middle"
-                fontSize={8.5} fontWeight="700" fill={isDown ? "#666" : color}
+              {isJoining && (
+                <>
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={1.5}
+                    strokeDasharray="5 5" opacity={0.4}
+                    style={{
+                      animation: "pulse 2s ease-in-out infinite",
+                      transformOrigin: `${pos.x}px ${pos.y}px`
+                    }} />
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={1}
+                    strokeDasharray="5 5" opacity={0.2}
+                    style={{
+                      animation: "pulse 2s ease-in-out 0.3s infinite",
+                      transformOrigin: `${pos.x}px ${pos.y}px`
+                    }} />
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={0.5}
+                    strokeDasharray="5 5" opacity={0.1}
+                    style={{
+                      animation: "pulse 2s ease-in-out 0.6s infinite",
+                      transformOrigin: `${pos.x}px ${pos.y}px`
+                    }} />
+                </>
+              )}
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
+                fontSize={16} fontWeight="800" fill={isDown ? "#666" : displayColor}
                 style={{ pointerEvents: "none" }}>
-                {node.id.length > 7 ? node.id.slice(0, 7) : node.id}
+                {isJoining ? "⟳" : node.id.replace("Node", "")}
+              </text>
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={7} fill={`${displayColor}88`}
+                style={{ pointerEvents: "none" }}>
+                {isJoining ? "" : node.id}
               </text>
               {dataLen > 0 && (
                 <text x={pos.x} y={pos.y + 10} textAnchor="middle" dominantBaseline="middle"
                   fontSize={7} fill={`${color}99`} style={{ pointerEvents: "none" }}>
-                  {dataLen}k
+                  {dataLen}
                 </text>
               )}
               <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7.5} fill="rgba(255,255,255,0.3)" style={{ pointerEvents: "none" }}>
-                {displayToken}
+                fontSize={7.5} fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.3)"} style={{ pointerEvents: "none" }}>
+                {isJoining ? "joining..." : displayToken}
               </text>
 
               {/* CSV badge */}
@@ -279,7 +329,10 @@ export default function TokenRing({
 
         {/* Palette node */}
         {!palDragging && (
-          <g onMouseDown={onPaletteMD} style={{ cursor: nodes.length >= 6 ? "not-allowed" : "grab", opacity: nodes.length >= 6 ? 0.3 : 1 }}>
+          <g onMouseDown={onPaletteMD} style={{
+            cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab",
+            opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1
+          }}>
             <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R}
               fill="rgba(124,106,247,0.15)" stroke="#7c6af7" strokeWidth={1.5} strokeDasharray="4 3" />
             <text x={PALETTE.x} y={PALETTE.y}
@@ -287,7 +340,7 @@ export default function TokenRing({
               fontSize={22} fill="#7c6af7" fontWeight="300">+</text>
             <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14}
               textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
-              {nodes.length >= 6 ? "max 6 nodes" : "drag to ring"}
+              {nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}
             </text>
           </g>
         )}
@@ -306,7 +359,7 @@ export default function TokenRing({
       {hoveredId && movingIdRef.current === null && (() => {
         const node = nodes.find((n) => n.id === hoveredId);
         if (!node) return null;
-        const data = cluster[hoveredId] ?? [];
+        const data = (cluster[hoveredId]?.length > 0 ? cluster[hoveredId] : null) ?? csvDataByNode[hoveredId] ?? [];
         const color = nodeColorMap[hoveredId] ?? "#7c6af7";
         const ww = wrapRef.current?.clientWidth ?? 400;
         const wh = wrapRef.current?.clientHeight ?? 400;

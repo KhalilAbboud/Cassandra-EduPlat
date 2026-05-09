@@ -1,14 +1,41 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-import csv
-import io
+from services.data_service import write_data, read_data, delete_data
+from pydantic import BaseModel
+import csv, io
 
 router = APIRouter(prefix="/data", tags=["Data"])
+
+class DataItem(BaseModel):
+    key: str
+    value: str
+
+@router.post("/write")
+def write_data_route(item: DataItem):
+    try:
+        return write_data(item.key, item.value)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/read/{key}")
+def read_data_route(key: str):
+    try:
+        return read_data(key)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@router.delete("/{key}")
+def delete_data_route(key: str):
+    try:
+        return delete_data(key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/import_csv")
 async def import_csv(
     file: UploadFile = File(...),
     has_header: bool = Form(True),
     column_names: str = Form(""),
+    partition_key: str = Form(""),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="CSV file is required")
@@ -47,21 +74,34 @@ async def import_csv(
     table_rows = {}
     skipped = 0
 
+    pk_index = 0
+    if partition_key and partition_key in header_cols:
+        pk_index = header_cols.index(partition_key)
+
     for row in data_rows:
-        c0 = row[0].strip() if row else ""
-        if not c0:
+        pk_value = row[pk_index].strip() if len(row) > pk_index else ""
+        if not pk_value:
             skipped += 1
             continue
-        row_id = f"row{c0}" if c0.isdigit() else c0
+        row_id = pk_value  # ← was f"row{c0}" — now just the raw value e.g. "2"
         row_obj = {}
         for idx, col_val in enumerate(row):
             col_name = header_cols[idx] if idx < len(header_cols) else f"col{idx+1}"
             row_obj[col_name] = col_val.strip()
         table_rows[row_id] = row_obj
+    
+    write_errors = []
+    for row_id, row_obj in table_rows.items():
+        try:
+            import json
+            write_data(str(row_id), json.dumps(row_obj, ensure_ascii=False))
+        except Exception as e:
+            write_errors.append(f"ERROR writing row {row_id}: {str(e)}")
 
     return {
         "message": "CSV imported",
         "rows_imported": len(table_rows),
         "rows_skipped": skipped,
+        "write_errors": write_errors,
         "table": {table_name: table_rows},
     }

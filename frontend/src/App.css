@@ -400,3 +400,17 @@ label {
 .dot.red {
   background: #ef4444;
 }
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.node-joining-animation {
+  animation: spin 2s linear infinite;
+}

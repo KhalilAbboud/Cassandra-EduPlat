@@ -2,22 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addNode, removeNode, writeData, readData,
   getCluster, getNodeHealth, getClusterStatus,
-  deleteData, importCsv,
+  deleteData, importCsv, resetCluster
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
 import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
 import "./App.css";
-const NAME_POOL = [
-  "NodeA", "NodeB", "NodeC", "NodeD", "NodeE",
-  "NodeF", "NodeG", "NodeH", "NodeI", "NodeJ",
-  "NodeK", "NodeL", "NodeM", "NodeN", "NodeO",
-  "NodeP", "NodeQ", "NodeR", "NodeS", "NodeT",
-];
+const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
 
 // ── style tokens ─────────────────────────────────────────────────────────────
 const BORDER = "1px solid rgba(255,255,255,0.07)";
 const BG_CARD = "rgba(255,255,255,0.03)";
-const PURPLE = "#7c6af7";
+const PURPLE = "#4a2efbff";
 
 const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
 const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: PURPLE, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
@@ -74,6 +69,7 @@ export default function App() {
   const [nodeStatus, setNodeStatus] = useState(null);
   const [healthNodeId, setHealthNodeId] = useState("");
   const [clusterStatus, setClusterStatus] = useState(null);
+  const usedNamesRef = useRef(new Set());
 
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreviewRows, setCsvPreviewRows] = useState({});
@@ -90,6 +86,10 @@ export default function App() {
   const [simulationResult, setSimulationResult] = useState(null);
   const [consistencyResult, setConsistencyResult] = useState(null);
 
+  const getNextName = useCallback(() => {
+    return NAME_POOL.find((name) => !usedNamesRef.current.has(name)) ?? `Node${Date.now()}`;
+  }, []);
+
   // ── sidebar open/close state ──────────────────────────────────────────────
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
@@ -97,7 +97,19 @@ export default function App() {
   const SIDEBAR_W = 270;
   const COLLAPSED_W = 0;
 
-  const replicatedCounts = csvImportResult?.replicated_counts_per_node ?? {};
+  const replicatedCounts = useMemo(() => {
+    const fromBackend = csvImportResult?.replicated_counts_per_node;
+    if (fromBackend && Object.keys(fromBackend).length > 0) return fromBackend;
+    // derive from client-side simulation when backend doesn't return it
+    const counts = {};
+    csvDistribution.forEach(row => {
+      row.replicas?.forEach(n => {
+        counts[n.id] = (counts[n.id] ?? 0) + 1;
+      });
+    });
+    return counts;
+  }, [csvImportResult, csvDistribution]);
+
   const replicatedNodes = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
   const maxReplicated = useMemo(() => {
     const vals = Object.values(replicatedCounts);
@@ -110,16 +122,41 @@ export default function App() {
   }, []);
 
   const handleAddNode = useCallback(async (token) => {
-    const usedIds = new Set(nodes.map((n) => n.id));
-    const id = NAME_POOL.find((name) => !usedIds.has(name)) ?? `Node${Date.now()}`;
-    setNodes((prev) => [...prev, { id, token, status: "up" }]);
-    try { await addNode(id); await fetchCluster(); } catch (e) { console.error(e); }
-  }, [nodes, fetchCluster]);
+    const id = getNextName();
+    if (usedNamesRef.current.has(id)) return; // prevent duplicate
+    usedNamesRef.current.add(id);
+
+    const stamp = Date.now(); // unique stamp for this attempt
+
+    setNodes((prev) => [...prev, { id, token, status: "joining", stamp }]);
+
+    try {
+      await addNode(id);
+      // Only update if this exact attempt is still in state (not deleted + recreated)
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === id && n.stamp === stamp ? { ...n, status: "up" } : n
+        )
+      );
+      await fetchCluster();
+    } catch (e) {
+      setNodes((prev) => prev.filter((n) => !(n.id === id && n.stamp === stamp)));
+      usedNamesRef.current.delete(id);
+      console.error("addNode failed", e);
+    }
+  }, [fetchCluster, getNextName]);
 
   const handleRemoveNode = useCallback(async (nodeId) => {
+    usedNamesRef.current.delete(nodeId); // ← free name immediately
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setSimulationResult(null); setConsistencyResult(null);
-    try { await removeNode(nodeId); await fetchCluster(); } catch (e) { console.error(e); }
+    setSimulationResult(null);
+    setConsistencyResult(null);
+    try {
+      await removeNode(nodeId);
+      await fetchCluster();
+    } catch (e) {
+      console.error("removeNode failed", e);
+    }
   }, [fetchCluster]);
 
   const handleMoveNode = useCallback((nodeId, token) => {
@@ -137,6 +174,8 @@ export default function App() {
     if (result?.replicas)
       setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
   }, [key, nodes, replicationFactor, consistencyLevel]);
+
+  const anyJoining = nodes.some((n) => n.status === "joining");
 
   // Re-check consistency when CL changes while a simulation result exists
   useEffect(() => {
@@ -197,7 +236,7 @@ export default function App() {
 
     let backendResult = null;
     try {
-      backendResult = await importCsv(csvFile, csvHasHeader, csvColumnNames);
+      backendResult = await importCsv(csvFile, csvHasHeader, csvColumnNames, partitionKey);
     } catch (err) {
       setCsvError(err.message ?? "Backend import failed");
       return;
@@ -287,6 +326,41 @@ export default function App() {
                 <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); }).catch((e) => setOutput({ error: e.message }))}>Show Cluster</button>
               </Section>
 
+              <Section title="Cluster Reset">
+                <button
+                  style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a" }}
+                  onClick={() => {
+                    resetCluster().then(() => {
+                      // cluster state
+                      setNodes([]);
+                      setClusterData({});
+                      usedNamesRef.current.clear();
+                      // outputs
+                      setOutput(null);
+                      setNodeStatus(null);
+                      setClusterStatus(null);
+                      // simulation
+                      setSimulationResult(null);
+                      setConsistencyResult(null);
+                      // csv
+                      setCsvFile(null);
+                      setCsvPreviewRows({});
+                      setCsvColumns([]);
+                      setCsvDistribution([]);
+                      setCsvImportResult(null);
+                      setCsvError("");
+                      // inputs
+                      setKey("");
+                      setValue("");
+                      setDeleteKey("");
+                      setHealthNodeId("");
+                    }).catch(e => setOutput({ error: e.message }));
+                  }}
+                >
+                  Reset Cluster
+                </button>
+              </Section>
+
               <Section title="CSV Import">
                 <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   <input type="checkbox" checked={csvHasHeader}
@@ -359,6 +433,7 @@ export default function App() {
               nodes={nodes} cluster={clusterData}
               onAddNode={handleAddNode} onRemoveNode={handleRemoveNode} onMoveNode={handleMoveNode}
               simulationResult={simulationResult} csvDistribution={csvDistribution}
+              disabled={anyJoining}
             />
           </div>
 
@@ -496,7 +571,12 @@ export default function App() {
                 <label style={lbl}>Value</label>
                 <input style={inp} placeholder="e.g. Alice" value={value} onChange={(e) => setValue(e.target.value)} />
                 <button style={btn} onClick={() => writeData(key, value).then((r) => { setOutput(r); fetchCluster(); }).catch((e) => setOutput({ error: e.message }))}>Write</button>
-                <button style={btn} onClick={() => readData(key).then(setOutput).catch((e) => setOutput({ error: e.message }))}>Read</button>
+                <button style={btn} onClick={() =>
+                  readData(key).then((r) => {
+                    try { r.value = JSON.parse(r.value); } catch { /* plain string */ }
+                    setOutput(r);
+                  }).catch((e) => setOutput({ error: e.message }))
+                }>Read</button>
               </Section>
 
               <Section title="Delete">

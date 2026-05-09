@@ -52,11 +52,12 @@ export async function deleteData(key) {
   return res.json();
 }
 
-export async function importCsv(file, hasHeader = true, columnNames = "") {
+export async function importCsv(file, hasHeader = true, columnNames = "", partitionKey = "") {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("has_header", String(hasHeader));
   formData.append("column_names", columnNames);
+  formData.append("partition_key", partitionKey);
 
   const res = await fetch(`${API_BASE}/data/import_csv`, {
     method: "POST",
@@ -67,10 +68,13 @@ export async function importCsv(file, hasHeader = true, columnNames = "") {
   try { data = await res.json(); } catch {
     throw new Error("CSV import failed: invalid server response");
   }
-
   if (!res.ok) {
     throw new Error(data?.detail ? `CSV import failed: ${data.detail}` : "CSV import failed");
   }
-
   return data;
+}
+
+export async function resetCluster() {
+  const res = await fetch(`${API_BASE}/cluster/reset`, { method: "DELETE" });
+  return res.json();
 }

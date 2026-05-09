@@ -64,9 +64,8 @@ def get_existing_seed():
     
     return None  # Aucun nœud existant → ce nœud sera le seed
 
-def create_cassandra_node(node_name):
+def create_cassandra_node(node_name, replace_address=None):  # ← add replace_address param
     get_or_create_network()
-    # Supprimer si existe déjà
     try:
         old = get_client().containers.get(node_name)
         old.remove(force=True)
@@ -74,31 +73,40 @@ def create_cassandra_node(node_name):
     except docker.errors.NotFound:
         pass
 
-    # Chercher un seed existant dans le réseau
     seed = get_existing_seed()
     
     if seed:
         print(f"🔗 {node_name} will join cluster via seed {seed}")
     else:
         print(f"🆕 {node_name} will be the first node (seed = itself)")
-        seed = node_name  # Premier nœud = se seed lui-même
+        seed = node_name
+
+    # Build environment
+    env = {
+        "CASSANDRA_CLUSTER_NAME": CLUSTER_NAME,
+        "CASSANDRA_SEEDS": seed,
+        "MAX_HEAP_SIZE": "512M",
+        "HEAP_NEWSIZE": "100M",
+        "CASSANDRA_RING_DELAY_MS": "5000",
+        "CASSANDRA_CONSISTENT_RANGEMOVEMENT": "false"
+    }
+
+    # ← ADD THIS BLOCK
+    if replace_address:
+        env["JVM_OPTS"] = f"-Dcassandra.replace_address={replace_address}"
+        print(f"🔁 Replacing dead node at {replace_address}")
 
     container = get_client().containers.run(
         "cassandra:latest",
         name=node_name,
-        environment={
-            "CASSANDRA_CLUSTER_NAME": CLUSTER_NAME,
-            "CASSANDRA_SEEDS": seed,
-            "MAX_HEAP_SIZE": "512M",
-            "HEAP_NEWSIZE": "100M",
-            "CASSANDRA_RING_DELAY_MS": "5000"
-        },
+        environment=env,
         mem_limit="1g",
         detach=True,
         network=NETWORK_NAME
     )
     print(f"🚀 {node_name} started")
     return container
+
 def create_cluster(node_names: list):
     get_or_create_network()
     
