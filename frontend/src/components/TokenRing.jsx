@@ -102,7 +102,7 @@ export default function TokenRing({
     if (snapToken !== null) onAddNode?.(snapToken);
     setSnapToken(null);
     setGhostXY(PALETTE);
-  }, [palDragging, movingToken, snapToken, onAddNode, onMoveNode]);
+  }, [palDragging, movingToken, snapToken, onAddNode]);
 
   const onNodeEnter = useCallback((id, e) => {
     if (movingIdRef.current) return;
