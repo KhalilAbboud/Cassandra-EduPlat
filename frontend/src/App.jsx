@@ -12,10 +12,10 @@ const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
 // ── style tokens ─────────────────────────────────────────────────────────────
 const BORDER = "1px solid rgba(255,255,255,0.07)";
 const BG_CARD = "rgba(255,255,255,0.03)";
-const PURPLE = "#4a2efbff";
+const ACCENT = "#20B2AA";
 
 const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
-const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: PURPLE, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
+const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
 const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
 const btn = { width: "100%", marginBottom: 4 };
 const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
@@ -38,7 +38,7 @@ function CollapseBtn({ open, onClick, side }) {
         background: "#13132a",
         border: BORDER,
         [side === "left" ? "borderLeft" : "borderRight"]: "none",
-        color: PURPLE,
+        color: ACCENT,
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
@@ -48,7 +48,7 @@ function CollapseBtn({ open, onClick, side }) {
         lineHeight: 1,
         transition: "background 0.2s",
       }}
-      onMouseEnter={e => e.currentTarget.style.background = "rgba(124,106,247,0.15)"}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(32,178,170,0.15)"}
       onMouseLeave={e => e.currentTarget.style.background = "#13132a"}
     >
       {side === "left"
@@ -60,6 +60,7 @@ function CollapseBtn({ open, onClick, side }) {
 
 export default function App() {
   const [nodes, setNodes] = useState([]);
+  const [leavingNodes, setLeavingNodes] = useState([]);
   const [clusterData, setClusterData] = useState({});
 
   const [key, setKey] = useState("");
@@ -147,21 +148,31 @@ export default function App() {
   }, [fetchCluster, getNextName]);
 
   const handleRemoveNode = useCallback(async (nodeId) => {
-    usedNamesRef.current.delete(nodeId); // ← free name immediately
+    // Find the node to animate it leaving
+    const leavingNode = nodes.find((n) => n.id === nodeId);
+    if (leavingNode) {
+      setLeavingNodes((prev) => [...prev, { ...leavingNode, status: "leaving" }]);
+    }
+    usedNamesRef.current.delete(nodeId);
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     setSimulationResult(null);
     setConsistencyResult(null);
+    // Remove the leaving node after animation completes (600ms)
+    setTimeout(() => {
+      setLeavingNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    }, 600);
     try {
       await removeNode(nodeId);
       await fetchCluster();
     } catch (e) {
       console.error("removeNode failed", e);
     }
-  }, [fetchCluster]);
+  }, [fetchCluster, nodes]);
 
-  const handleMoveNode = useCallback((nodeId, token) => {
-    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, token } : n));
-  }, []);
+  // Node dragging disabled – nodes stay fixed on the ring
+  // const handleMoveNode = useCallback((nodeId, token) => {
+  //   setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, token } : n));
+  // }, []);
 
   const toggleNodeStatus = useCallback((nodeId) => {
     setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, status: n.status === "up" ? "down" : "up" } : n));
@@ -306,7 +317,7 @@ export default function App() {
         display: "flex", alignItems: "center", gap: 12, padding: "0 20px",
         borderBottom: BORDER, background: "rgba(255,255,255,0.02)",
       }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: PURPLE, letterSpacing: 1 }}>CassandraEdu</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>CassandraEdu</span>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 2 }}>SIMULATOR</span>
         <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
           {nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring
@@ -321,47 +332,11 @@ export default function App() {
           <div style={sidebarStyle(leftOpen, "left")}>
             <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
             <div style={sidebarInnerStyle}>
-
-              <Section title="Cluster">
-                <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); }).catch((e) => setOutput({ error: e.message }))}>Show Cluster</button>
-              </Section>
-
-              <Section title="Cluster Reset">
-                <button
-                  style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a" }}
-                  onClick={() => {
-                    resetCluster().then(() => {
-                      // cluster state
-                      setNodes([]);
-                      setClusterData({});
-                      usedNamesRef.current.clear();
-                      // outputs
-                      setOutput(null);
-                      setNodeStatus(null);
-                      setClusterStatus(null);
-                      // simulation
-                      setSimulationResult(null);
-                      setConsistencyResult(null);
-                      // csv
-                      setCsvFile(null);
-                      setCsvPreviewRows({});
-                      setCsvColumns([]);
-                      setCsvDistribution([]);
-                      setCsvImportResult(null);
-                      setCsvError("");
-                      // inputs
-                      setKey("");
-                      setValue("");
-                      setDeleteKey("");
-                      setHealthNodeId("");
-                    }).catch(e => setOutput({ error: e.message }));
-                  }}
-                >
-                  Reset Cluster
-                </button>
-              </Section>
-
               <Section title="CSV Import">
+                <label style={lbl}>Replication Factor</label>
+                <select style={inp} value={replicationFactor} onChange={(e) => setReplicationFactor(Number(e.target.value))}>
+                  <option value={1}>RF = 1</option><option value={2}>RF = 2</option><option value={3}>RF = 3</option>
+                </select>
                 <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   <input type="checkbox" checked={csvHasHeader}
                     onChange={(e) => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); }} />
@@ -382,188 +357,7 @@ export default function App() {
                 )}
                 <button style={btn} onClick={onImportCsv}>Import CSV</button>
                 {csvError && <pre style={{ color: "#f76a6a", fontSize: 10 }}>{csvError}</pre>}
-                {Object.keys(csvPreviewRows).length > 0 && (
-                  <>
-                    <label style={{ ...lbl, marginTop: 8 }}>Preview (first rows)</label>
-                    <pre style={{ maxHeight: 160, overflow: "auto", fontSize: 9 }}>
-                      {JSON.stringify(csvPreviewRows, null, 2)}
-                    </pre>
-                  </>
-                )}
               </Section>
-
-
-
-              {csvImportResult?.table && (
-                <Section title="Imported Table">
-                  <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 9 }}>
-                    {JSON.stringify(csvImportResult.table, null, 2)}
-                  </pre>
-                  <p style={{ opacity: 0.35, fontSize: 10, marginTop: 4 }}>
-                    {csvImportResult.rows_imported} rows imported
-                    {csvImportResult.rows_skipped > 0 && `, ${csvImportResult.rows_skipped} skipped`}
-                  </p>
-                </Section>
-              )}
-
-            </div>
-          </div>
-        </div>
-
-        {/* ══ CENTER ══ */}
-        <main style={{
-          flex: 1, overflow: "auto",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "24px 20px", gap: 16,
-          minWidth: 0,
-          marginLeft: leftOpen ? SIDEBAR_W : 0,
-          marginRight: rightOpen ? SIDEBAR_W : 0,
-          transition: "margin 0.28s cubic-bezier(0.4,0,0.2,1)",
-        }}>
-          {/* hint bar */}
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
-            <span><strong style={{ color: PURPLE }}>Drag +</strong> → add node</span>
-            <span><strong style={{ color: PURPLE }}>Hover</strong> → inspect data</span>
-            <span><strong style={{ color: PURPLE }}>× button</strong> → remove node</span>
-          </div>
-
-          {/* ring */}
-          <div style={{ width: "100%", maxWidth: 900 }}>
-            <TokenRing
-              nodes={nodes} cluster={clusterData}
-              onAddNode={handleAddNode} onRemoveNode={handleRemoveNode} onMoveNode={handleMoveNode}
-              simulationResult={simulationResult} csvDistribution={csvDistribution}
-              disabled={anyJoining}
-            />
-          </div>
-
-          {/* bottom strip */}
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {/*output*/}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Output</div>
-              {output
-                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                  {JSON.stringify(output, null, 2)}
-                </div>
-                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
-            </div>
-            {/* simulation settings */}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Settings</div>
-              <label style={lbl}>Replication Factor</label>
-              <select style={inp} value={replicationFactor} onChange={(e) => setReplicationFactor(Number(e.target.value))}>
-                <option value={1}>RF = 1</option><option value={2}>RF = 2</option><option value={3}>RF = 3</option>
-              </select>
-              <label style={lbl}>Consistency Level</label>
-              <select style={inp} value={consistencyLevel} onChange={(e) => setConsistencyLevel(e.target.value)}>
-                <option value="ONE">ONE</option><option value="QUORUM">QUORUM</option><option value="ALL">ALL</option>
-              </select>
-              <button
-                style={{ ...btn, marginTop: 4, background: "rgba(124,106,247,0.12)", border: `1px solid ${PURPLE}`, color: PURPLE, marginBottom: 0 }}
-                onClick={runSimulation} disabled={!key || nodes.length === 0}>
-                ▶ Simulate Write
-              </button>
-            </div>
-
-            {/* simulation result */}
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Result</div>
-              {simulationResult ? (
-                <div style={{ fontSize: 11, lineHeight: 1.9 }}>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Key: </span>{simulationResult.key}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Hash: </span>{simulationResult.hash}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Primary: </span>{simulationResult.primaryNode?.id ?? "—"}</div>
-                  {simulationResult.replicas.map((n, i) => (
-                    <div key={n.id} style={{ color: PURPLE }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
-                  ))}
-                  {consistencyResult && (
-                    <div style={{
-                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
-                      background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
-                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
-                    }}>
-                      <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
-                        {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
-                      </div>
-                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>
-                        {consistencyResult.consistencyLevel} · needs {consistencyResult.required} · alive {consistencyResult.aliveReplicas}/{consistencyResult.required}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p style={{ opacity: 0.3, fontSize: 11 }}>
-                  {nodes.length === 0 ? "Add nodes first." : "Enter a key on the right and simulate."}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* bottom strip row 2 — relocated panels */}
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {/* Node Failure Sim */}
-            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
-              <div style={h3}>Node Failure Sim</div>
-              {nodes.length === 0
-                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
-                : nodes.map((node) => (
-                  <button key={node.id}
-                    style={{
-                      ...btn,
-                      background: node.status === "down" ? "#8b2020" : undefined,
-                      color: node.status === "down" ? "#fff" : undefined,
-                      border: node.status === "down" ? "1px solid #b33030" : undefined,
-                      fontWeight: node.status === "down" ? 700 : undefined,
-                    }}
-                    onClick={() => toggleNodeStatus(node.id)}>
-                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
-                  </button>
-                ))}
-            </div>
-
-            {/* Cluster Status & Node Health */}
-            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
-              <div style={h3}>Cluster & Node Health</div>
-              <button style={{ ...btn, marginBottom: 6 }} onClick={() => getClusterStatus().then(setClusterStatus).catch((e) => setClusterStatus({ error: e.message }))}>Cluster Status</button>
-              {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input style={{ ...inp, flex: 1, marginBottom: 0 }} placeholder="NodeA" value={healthNodeId} onChange={(e) => setHealthNodeId(e.target.value)} />
-                <button style={{ ...btn, width: "auto", flex: "0 0 auto", marginBottom: 0, padding: "6px 10px", fontSize: 10 }}
-                  onClick={() => getNodeHealth(healthNodeId).then(setNodeStatus).catch((e) => setNodeStatus({ error: e.message }))}>
-                  Check
-                </button>
-              </div>
-              {nodeStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
-            </div>
-
-            {/* Distribution / Node */}
-            {replicatedNodes.length > 0 && (
-              <div style={{ ...card, flex: 2, minWidth: 250, marginBottom: 0 }}>
-                <div style={h3}>Distribution / Node</div>
-                {replicatedNodes.map((n) => {
-                  const count = replicatedCounts[n] ?? 0;
-                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
-                  return (
-                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
-                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, background: PURPLE, height: 10, transition: "width .4s" }} />
-                      </div>
-                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </main>
-
-        {/* ══ RIGHT SIDEBAR ══ */}
-        <div style={{ position: "fixed", top: 48, right: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
-          <div style={sidebarStyle(rightOpen, "right")}>
-            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
-            <div style={sidebarInnerStyle}>
 
               <Section title="Write / Read">
                 <label style={lbl}>Key</label>
@@ -594,6 +388,197 @@ export default function App() {
           </div>
         </div>
 
+        {/* ══ CENTER ══ */}
+        <main style={{
+          flex: 1, overflow: "auto",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "24px 20px", gap: 16,
+          minWidth: 0,
+          marginLeft: leftOpen ? SIDEBAR_W : 0,
+          marginRight: rightOpen ? SIDEBAR_W : 0,
+          transition: "margin 0.28s cubic-bezier(0.4,0,0.2,1)",
+        }}>
+          {/* hint bar */}
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
+            <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
+            <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
+            <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
+          </div>
+
+          {/* ring */}
+          <div style={{ width: "100%", maxWidth: 900 }}>
+            <TokenRing
+              nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
+              onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
+              simulationResult={simulationResult} csvDistribution={csvDistribution}
+              disabled={anyJoining}
+            />
+          </div>
+
+          {/* bottom strip */}
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/*output*/}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Output</div>
+              {output
+                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {JSON.stringify(output, null, 2)}
+                </div>
+                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
+            </div>
+            {/* simulation settings */}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Simulation Settings</div>
+              <label style={lbl}>Consistency Level</label>
+              <select style={inp} value={consistencyLevel} onChange={(e) => setConsistencyLevel(e.target.value)}>
+                <option value="ONE">ONE</option><option value="QUORUM">QUORUM</option><option value="ALL">ALL</option>
+              </select>
+              <button
+                style={{ ...btn, marginTop: 4, background: "rgba(32,178,170,0.12)", border: `1px solid ${ACCENT}`, color: ACCENT, marginBottom: 0 }}
+                onClick={runSimulation} disabled={!key || nodes.length === 0}>
+                ▶ Simulate Write
+              </button>
+            </div>
+          </div>
+
+          {/* bottom strip row 2 */}
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/* Node Failure Sim */}
+            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
+              <div style={h3}>Node Failure Sim</div>
+              {nodes.length === 0
+                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
+                : nodes.map((node) => (
+                  <button key={node.id}
+                    style={{
+                      ...btn,
+                      background: node.status === "down" ? "#8b2020" : undefined,
+                      color: node.status === "down" ? "#fff" : undefined,
+                      border: node.status === "down" ? "1px solid #b33030" : undefined,
+                      fontWeight: node.status === "down" ? 700 : undefined,
+                    }}
+                    onClick={() => toggleNodeStatus(node.id)}>
+                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
+                  </button>
+                ))}
+            </div>
+
+            {/* Distribution / Node */}
+            {replicatedNodes.length > 0 && (
+              <div style={{ ...card, flex: 1, minWidth: 200, marginBottom: 0 }}>
+                <div style={h3}>Distribution / Node</div>
+                {replicatedNodes.map((n) => {
+                  const count = replicatedCounts[n] ?? 0;
+                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  return (
+                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
+                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, background: ACCENT, height: 10, transition: "width .4s" }} />
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* simulation result */}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Simulation Result</div>
+              {simulationResult ? (
+                <div style={{ fontSize: 11, lineHeight: 1.9 }}>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Key: </span>{simulationResult.key}</div>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Hash: </span>{simulationResult.hash}</div>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Primary: </span>{simulationResult.primaryNode?.id ?? "—"}</div>
+                  {simulationResult.replicas.map((n, i) => (
+                    <div key={n.id} style={{ color: ACCENT }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
+                  ))}
+                  {consistencyResult && (
+                    <div style={{
+                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
+                      background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
+                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
+                    }}>
+                      <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
+                        {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
+                      </div>
+                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>
+                        {consistencyResult.consistencyLevel} · needs {consistencyResult.required} · alive {consistencyResult.aliveReplicas}/{consistencyResult.required}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p style={{ opacity: 0.3, fontSize: 11 }}>
+                  {nodes.length === 0 ? "Add nodes first." : "Enter a key and simulate."}
+                </p>
+              )}
+            </div>
+          </div>
+        </main>
+
+        {/* ══ RIGHT SIDEBAR ══ */}
+        <div style={{ position: "fixed", top: 48, right: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
+          <div style={sidebarStyle(rightOpen, "right")}>
+            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
+            <div style={sidebarInnerStyle}>
+
+              <Section title="Cluster">
+                <button style={btn} onClick={() => getCluster().then((r) => { setOutput(r); setClusterData(r); }).catch((e) => setOutput({ error: e.message }))}>Show Cluster</button>
+              </Section>
+
+              <Section title="Cluster Reset">
+                <button
+                  style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a" }}
+                  onClick={() => {
+                    resetCluster().then(() => {
+                      setNodes([]);
+                      setLeavingNodes([]);
+                      setClusterData({});
+                      usedNamesRef.current.clear();
+                      setOutput(null);
+                      setNodeStatus(null);
+                      setClusterStatus(null);
+                      setSimulationResult(null);
+                      setConsistencyResult(null);
+                      setCsvFile(null);
+                      setCsvPreviewRows({});
+                      setCsvColumns([]);
+                      setCsvDistribution([]);
+                      setCsvImportResult(null);
+                      setCsvError("");
+                      setKey("");
+                      setValue("");
+                      setDeleteKey("");
+                      setHealthNodeId("");
+                    }).catch(e => setOutput({ error: e.message }));
+                  }}
+                >
+                  Reset Cluster
+                </button>
+              </Section>
+
+              <Section title="Node Health">
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input style={{ ...inp, flex: 1, marginBottom: 0 }} placeholder="NodeA" value={healthNodeId} onChange={(e) => setHealthNodeId(e.target.value)} />
+                  <button style={{ ...btn, width: "auto", flex: "0 0 auto", marginBottom: 0, padding: "6px 10px", fontSize: 10 }}
+                    onClick={() => getNodeHealth(healthNodeId).then(setNodeStatus).catch((e) => setNodeStatus({ error: e.message }))}>
+                    Check
+                  </button>
+                </div>
+                {nodeStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
+              </Section>
+
+              <Section title="Cluster Status">
+                <button style={{ ...btn, marginBottom: 6 }} onClick={() => getClusterStatus().then(setClusterStatus).catch((e) => setClusterStatus({ error: e.message }))}>Cluster Status</button>
+                {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
+              </Section>
+
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -605,9 +590,9 @@ function Section({ title, children }) {
     <div style={{ marginBottom: 6 }}>
       <div style={{
         fontSize: 10, letterSpacing: 2, textTransform: "uppercase",
-        color: PURPLE, fontWeight: 700,
+        color: ACCENT, fontWeight: 700,
         padding: "10px 2px 8px",
-        borderBottom: "1px solid rgba(124,106,247,0.15)",
+        borderBottom: "1px solid rgba(32,178,170,0.15)",
         marginBottom: 10,
       }}>{title}</div>
       {children}

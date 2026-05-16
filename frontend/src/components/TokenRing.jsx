@@ -1,14 +1,14 @@
 import { useState, useRef, useCallback } from "react";
 
-const W = 800, H = 800, CX = 400, CY = 400;
-const RING_R = 300;
-const NODE_R = 30;
+const W = 700, H = 700, CX = 350, CY = 350;
+const RING_R = 220;
+const NODE_R = 28;
 const SNAP_THR = 60;
 const MAX_TOK = 10000;
-const PALETTE = { x: 60, y: 740 };
+const PALETTE = { x: 55, y: 645 };
 
 const NODE_COLORS = [
-  "#7c6af7", "#f76a6a", "#6af7b8", "#f7c76a",
+  "#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a",
   "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a",
 ];
 
@@ -23,8 +23,8 @@ const distCenter = (x, y) => Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
 const TICKS = [0, 1250, 2500, 3750, 5000, 6250, 7500, 8750];
 
 export default function TokenRing({
-  nodes = [], cluster = {},
-  onAddNode, onRemoveNode, onMoveNode,
+  nodes = [], leavingNodes = [], cluster = {},
+  onAddNode, onRemoveNode,
   disabled = false,
   simulationResult, csvDistribution = [],
 }) {
@@ -36,8 +36,9 @@ export default function TokenRing({
   const [ghostXY, setGhostXY] = useState(PALETTE);
   const [snapToken, setSnapToken] = useState(null);
 
-  // Node drag (reposition) — ref avoids stale closures in mousemove
-  const movingIdRef = useRef(null);
+  // Node drag (reposition) — DISABLED: nodes stay fixed on ring
+  // const movingIdRef = useRef(null);
+  const movingIdRef = { current: null }; // always null — drag disabled
   const [movingToken, setMovingToken] = useState(null);
 
   // Hover tooltip
@@ -65,10 +66,7 @@ export default function TokenRing({
   const onNodeMD = useCallback((e, nodeId, nodeToken, isJoining) => {
     e.stopPropagation();
     e.preventDefault();
-    if (isJoining) return;   // ← don't allow dragging a joining node
-    movingIdRef.current = nodeId;
-    setMovingToken(nodeToken);
-    setHoveredId(null);
+    // Node dragging disabled — nodes stay fixed on the ring
   }, []);
 
   const onSvgMM = useCallback((e) => {
@@ -143,6 +141,25 @@ export default function TokenRing({
 
   return (
     <div ref={wrapRef} style={{ position: "relative", userSelect: "none", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
+      <style>{`
+        @keyframes nodeLeave {
+          0%   { opacity: 1; transform: scale(1); }
+          40%  { opacity: 0.8; transform: scale(1.15); }
+          100% { opacity: 0; transform: scale(0.3); }
+        }
+        @keyframes nodeLeavingRing {
+          0%   { opacity: 0.6; r: ${NODE_R + 12}; }
+          50%  { opacity: 0.4; r: ${NODE_R + 25}; }
+          100% { opacity: 0; r: ${NODE_R + 35}; }
+        }
+        .node-leaving {
+          animation: nodeLeave 0.6s ease-in forwards;
+          transform-origin: center;
+        }
+        .node-leaving-ring {
+          animation: nodeLeavingRing 0.6s ease-out forwards;
+        }
+      `}</style>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -153,8 +170,8 @@ export default function TokenRing({
         onMouseLeave={onSvgMU}
       >
         {/* Ring */}
-        <circle cx={CX} cy={CY} r={RING_R + 4} fill="none" stroke="rgba(124,106,247,0.08)" strokeWidth={22} />
-        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={2.5} strokeDasharray="6 4" />
+        <circle cx={CX} cy={CY} r={RING_R + 5} fill="none" stroke="rgba(32,178,170,0.10)" strokeWidth={28} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth={3.5} strokeDasharray="6 4" />
 
         {/* Ticks */}
         {TICKS.map((t) => {
@@ -183,7 +200,7 @@ export default function TokenRing({
           const large = sweep > Math.PI ? 1 : 0;
           const p1 = { x: CX + RING_R * Math.cos(a1), y: CY + RING_R * Math.sin(a1) };
           const p2 = { x: CX + RING_R * Math.cos(a2), y: CY + RING_R * Math.sin(a2) };
-          const color = nodeColorMap[node.id] ?? "#7c6af7";
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
           return (
             <path key={`arc-${node.id}`}
               d={`M ${p1.x} ${p1.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${p2.x} ${p2.y}`}
@@ -201,7 +218,7 @@ export default function TokenRing({
           const pos = ringXY(displayToken);
           const isPrimary = node.id === primaryId;
           const isDown = node.status === "down";
-          const color = nodeColorMap[node.id] ?? "#7c6af7";
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
           const isJoining = node.status === "joining";
           const displayColor = isJoining ? "#f7c76a" : color;
           const csvBadge = csvCountByNode[node.id] ?? 0;
@@ -211,7 +228,7 @@ export default function TokenRing({
 
           return (
             <g key={node.id}
-              style={{ cursor: isJoining ? "wait" : isMoving ? "grabbing" : "grab" }}
+              style={{ cursor: isJoining ? "wait" : "default" }}
               onMouseDown={(e) => onNodeMD(e, node.id, node.token, isJoining)}
               onMouseEnter={(e) => onNodeEnter(node.id, e)}
               onMouseLeave={onNodeLeave}
@@ -307,15 +324,47 @@ export default function TokenRing({
           );
         })}
 
+        {/* Leaving nodes (animated out) */}
+        {leavingNodes.map((node) => {
+          const pos = ringXY(node.token);
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
+          return (
+            <g key={`leaving-${node.id}`} style={{ pointerEvents: "none" }}>
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill={`${color}22`} stroke={color} strokeWidth={1.5}
+                className="node-leaving" />
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12}
+                fill="none" stroke="#f76a6a" strokeWidth={1}
+                strokeDasharray="4 3" opacity={0.6}
+                className="node-leaving-ring" />
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
+                fontSize={16} fontWeight="800" fill={color}
+                className="node-leaving">
+                {node.id.replace("Node", "")}
+              </text>
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={7} fill={`${color}88`}
+                className="node-leaving">
+                {node.id}
+              </text>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
+                fontSize={7.5} fill="#f76a6a99"
+                className="node-leaving">
+                leaving...
+              </text>
+            </g>
+          );
+        })}
+
         {/* Snap preview */}
         {snapToken !== null && (() => {
           const pos = ringXY(snapToken);
           return (
             <g style={{ pointerEvents: "none" }}>
               <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill="rgba(124,106,247,0.2)" stroke="#7c6af7" strokeWidth={1.5} strokeDasharray="5 3" />
+                fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3" />
               <text x={pos.x} y={pos.y + NODE_R + 13}
-                textAnchor="middle" fontSize={8} fill="#7c6af7">{snapToken}</text>
+                textAnchor="middle" fontSize={8} fill="#20B2AA">{snapToken}</text>
             </g>
           );
         })()}
@@ -323,7 +372,7 @@ export default function TokenRing({
         {/* Palette ghost */}
         {palDragging && (
           <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R}
-            fill="rgba(124,106,247,0.5)" stroke="#7c6af7" strokeWidth={1.5}
+            fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5}
             style={{ pointerEvents: "none" }} />
         )}
 
@@ -334,10 +383,10 @@ export default function TokenRing({
             opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1
           }}>
             <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R}
-              fill="rgba(124,106,247,0.15)" stroke="#7c6af7" strokeWidth={1.5} strokeDasharray="4 3" />
+              fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
             <text x={PALETTE.x} y={PALETTE.y}
               textAnchor="middle" dominantBaseline="middle"
-              fontSize={22} fill="#7c6af7" fontWeight="300">+</text>
+              fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
             <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14}
               textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
               {nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}
@@ -351,7 +400,7 @@ export default function TokenRing({
           {nodes.length} node{nodes.length !== 1 ? "s" : ""}
         </text>
         {nodes.length === 0 && (
-          <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(124,106,247,0.5)">drag + to start</text>
+          <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>
         )}
       </svg>
 
@@ -360,7 +409,7 @@ export default function TokenRing({
         const node = nodes.find((n) => n.id === hoveredId);
         if (!node) return null;
         const data = (cluster[hoveredId]?.length > 0 ? cluster[hoveredId] : null) ?? csvDataByNode[hoveredId] ?? [];
-        const color = nodeColorMap[hoveredId] ?? "#7c6af7";
+        const color = nodeColorMap[hoveredId] ?? "#20B2AA";
         const ww = wrapRef.current?.clientWidth ?? 400;
         const wh = wrapRef.current?.clientHeight ?? 400;
         const flipX = tooltipPx.x > ww * 0.65;
@@ -403,7 +452,7 @@ export default function TokenRing({
               </>
             }
             <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
-              drag to reposition · hover × to remove
+              hover × to remove
             </div>
           </div>
         );
