@@ -1,0 +1,1714 @@
+# EXPORT DU PROJET: backend
+# DATE: 2026-05-10 23:27:05
+#==============================================================================
+
+
+================================================================================
+FICHIER: cluster_registry.json
+================================================================================
+
+{}
+
+
+================================================================================
+FICHIER: main.py
+================================================================================
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes.cluster_routes import router as cluster_router
+from routes.node_routes import router as node_router
+from routes.data_routes import router as data_router
+from services.registryService import write_registry
+from routes.token_routes import router as token_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    write_registry({})
+    print("📋 Registry cleared on startup")
+    yield
+    write_registry({})
+    print("📋 Registry cleared on shutdown")
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to CassandraEdu API! Visit /docs for documentation."}
+
+app.include_router(node_router, prefix="/api/v1")
+app.include_router(cluster_router, prefix="/api/v1")
+app.include_router(data_router, prefix="/api/v1")
+app.include_router(token_router, prefix="/api/v1") 
+
+
+================================================================================
+FICHIER: parser.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+Script pour parser un dossier de projet et combiner tous les fichiers de code
+en un seul fichier texte, avec des indicateurs clairs pour chaque fichier.
+"""
+
+import os
+import argparse
+from pathlib import Path
+import fnmatch
+
+# Extensions de fichiers de code courantes
+CODE_EXTENSIONS = {
+    # Python
+    '.py', '.pyw', '.ipynb',
+    # Web
+    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.js', '.jsx', '.ts', '.tsx', '.vue',
+    # Backend
+    '.php', '.rb', '.pl', '.pm', '.t', '.java', '.kt', '.kts', '.scala', '.go', '.rs',
+    # C/C++
+    '.c', '.h', '.cpp', '.hpp', '.cc', '.cxx', '.hh', '.hxx',
+    # C#
+    '.cs', '.cshtml', '.vb',
+    # Data & Config
+    '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+    # Shell & Scripts
+    '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+    # SQL
+    '.sql', '.mysql', '.pgsql',
+    # Markdown/Documentation
+    '.md', '.rst', '.txt', '.tex',
+    # Autres
+    '.swift', '.m', '.mm', '.dart', '.lua', '.r', '.jl', '.ex', '.exs'
+}
+
+# Dossiers à ignorer par défaut
+IGNORE_DIRS = {
+    '__pycache__', '.git', '.svn', '.hg', '.idea', '.vscode',
+    'node_modules', 'venv', 'env', '.env', 'dist', 'build',
+    'target', 'bin', 'obj', 'out', '.next', '.nuxt',
+    'vendor', 'bower_components', 'jspm_packages',
+    '__MACOSX', '.DS_Store'
+}
+
+# Fichiers à ignorer par défaut
+IGNORE_FILES = {
+    '*.pyc', '*.pyo', '*.pyd', '*.so', '*.dll', '*.dylib',
+    '*.class', '*.exe', '*.msi', '*.msm', '*.msp',
+    '*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.ico',
+    '*.mp3', '*.mp4', '*.avi', '*.mov', '*.wmv',
+    '*.zip', '*.tar', '*.gz', '*.rar', '*.7z',
+    '*.pdf', '*.doc', '*.docx', '*.xls', '*.xlsx',
+    '*.log', '*.tmp', '*.temp', '*.cache',
+    '.DS_Store', 'Thumbs.db'
+}
+
+def should_ignore(path, ignore_dirs=None, ignore_files=None):
+    """Vérifie si un fichier ou dossier doit être ignoré."""
+    name = path.name
+    
+    # Vérifier les dossiers à ignorer
+    if path.is_dir():
+        if ignore_dirs and name in ignore_dirs:
+            return True
+        if IGNORE_DIRS and name in IGNORE_DIRS:
+            return True
+    
+    # Vérifier les fichiers à ignorer (pattern matching)
+    if path.is_file():
+        if ignore_files:
+            for pattern in ignore_files:
+                if fnmatch.fnmatch(name, pattern):
+                    return True
+        for pattern in IGNORE_FILES:
+            if fnmatch.fnmatch(name, pattern):
+                return True
+    
+    return False
+
+def parse_project(project_path, output_file, extensions=None, ignore_dirs=None, 
+                  ignore_files=None, include_binary=False, max_file_size=10*1024*1024):
+    """
+    Parse un dossier de projet et écrit tous les fichiers dans un fichier de sortie.
+    
+    Args:
+        project_path: Chemin du dossier projet
+        output_file: Chemin du fichier de sortie
+        extensions: Set d'extensions à inclure (None pour toutes les extensions par défaut)
+        ignore_dirs: Set de dossiers à ignorer
+        ignore_files: Set de patterns de fichiers à ignorer
+        include_binary: Inclure les fichiers binaires (déconseillé)
+        max_file_size: Taille max des fichiers en bytes (défaut: 10MB)
+    """
+    project_root = Path(project_path).resolve()
+    output_path = Path(output_file).resolve()
+    
+    if not project_root.exists():
+        print(f"Erreur: Le dossier {project_root} n'existe pas.")
+        return
+    
+    if not project_root.is_dir():
+        print(f"Erreur: {project_root} n'est pas un dossier.")
+        return
+    
+    # Éviter d'écrire dans le dossier projet
+    if output_path.parent == project_root:
+        print("Attention: Le fichier de sortie est dans le dossier projet. Utilisation d'un nom différent...")
+        output_path = project_root / f"project_export_{output_path.name}"
+    
+    files_processed = 0
+    files_skipped = 0
+    files_too_large = 0
+    total_size = 0
+    
+    with open(output_path, 'w', encoding='utf-8') as outfile:
+        outfile.write(f"# EXPORT DU PROJET: {project_root.name}\n")
+        outfile.write(f"# DATE: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        outfile.write("#" + "="*78 + "\n\n")
+        
+        for root, dirs, files in os.walk(project_root):
+            # Convertir le chemin en Path
+            current_dir = Path(root)
+            
+            # Filtrer les dossiers à ignorer (modification sur place)
+            dirs[:] = [d for d in dirs if not should_ignore(current_dir / d, ignore_dirs, {})]
+            
+            # Trier les fichiers pour un ordre cohérent
+            files.sort()
+            
+            for file in files:
+                file_path = current_dir / file
+                
+                # Vérifier si le fichier doit être ignoré
+                if should_ignore(file_path, set(), ignore_files):
+                    files_skipped += 1
+                    continue
+                
+                # Vérifier l'extension
+                if extensions and file_path.suffix.lower() not in extensions:
+                    files_skipped += 1
+                    continue
+                
+                # Vérifier la taille du fichier
+                try:
+                    file_size = file_path.stat().st_size
+                    if file_size > max_file_size:
+                        print(f"Fichier trop grand ignoré: {file_path.relative_to(project_root)} ({file_size/1024/1024:.1f} MB)")
+                        files_too_large += 1
+                        continue
+                    
+                    # Essayer de lire le fichier
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as infile:
+                            content = infile.read()
+                    except UnicodeDecodeError:
+                        if include_binary:
+                            # Lire en binaire et tenter de décoder
+                            with open(file_path, 'rb') as infile:
+                                content = str(infile.read())[:1000] + "... [contenu binaire tronqué]"
+                        else:
+                            print(f"Fichier binaire ignoré: {file_path.relative_to(project_root)}")
+                            files_skipped += 1
+                            continue
+                    
+                    # Écrire l'en-tête du fichier dans la sortie
+                    rel_path = file_path.relative_to(project_root)
+                    outfile.write(f"\n{'='*80}\n")
+                    outfile.write(f"FICHIER: {rel_path}\n")
+                    outfile.write(f"{'='*80}\n\n")
+                    outfile.write(content)
+                    outfile.write("\n\n")
+                    
+                    files_processed += 1
+                    total_size += file_size
+                    
+                    # Afficher la progression
+                    if files_processed % 10 == 0:
+                        print(f"Fichiers traités: {files_processed}")
+                        
+                except Exception as e:
+                    print(f"Erreur lors de la lecture de {file_path}: {e}")
+                    files_skipped += 1
+    
+    # Afficher le résumé
+    print(f"\n{'='*50}")
+    print(f"RÉSUMÉ DE L'EXPORTATION")
+    print(f"{'='*50}")
+    print(f"Dossier projet: {project_root}")
+    print(f"Fichier de sortie: {output_path}")
+    print(f"Fichiers traités: {files_processed}")
+    print(f"Fichiers ignorés: {files_skipped}")
+    print(f"Fichiers trop volumineux: {files_too_large}")
+    print(f"Taille totale: {total_size/1024/1024:.2f} MB")
+    print(f"{'='*50}")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Parse un dossier de projet et combine tous les fichiers de code en un seul fichier texte."
+    )
+    parser.add_argument('project_path', help='Chemin du dossier projet à parser')
+    parser.add_argument('-o', '--output', default='project_export.txt', 
+                       help='Fichier de sortie (défaut: project_export.txt)')
+    parser.add_argument('-e', '--extensions', nargs='+', 
+                       help='Extensions à inclure (ex: .py .js .html)')
+    parser.add_argument('--ignore-dirs', nargs='+', default=[],
+                       help='Dossiers supplémentaires à ignorer')
+    parser.add_argument('--ignore-files', nargs='+', default=[],
+                       help='Patterns de fichiers supplémentaires à ignorer')
+    parser.add_argument('--include-binary', action='store_true',
+                       help='Inclure les fichiers binaires (déconseillé)')
+    parser.add_argument('--max-size', type=int, default=10,
+                       help='Taille max des fichiers en MB (défaut: 10)')
+    parser.add_argument('--use-default-exts', action='store_true',
+                       help='Utiliser les extensions par défaut (tous les fichiers de code courants)')
+    
+    args = parser.parse_args()
+    
+    # Déterminer les extensions à utiliser
+    extensions = None
+    if args.use_default_exts:
+        extensions = CODE_EXTENSIONS
+    elif args.extensions:
+        # S'assurer que les extensions commencent par un point
+        extensions = {ext if ext.startswith('.') else f'.{ext}' for ext in args.extensions}
+    
+    # Combiner les dossiers à ignorer
+    ignore_dirs = set(args.ignore_dirs) if args.ignore_dirs else None
+    
+    # Combiner les patterns de fichiers à ignorer
+    ignore_files = set(args.ignore_files) if args.ignore_files else None
+    
+    # Convertir la taille max en bytes
+    max_file_size = args.max_size * 1024 * 1024
+    
+    # Exécuter le parsing
+    parse_project(
+        args.project_path, 
+        args.output,
+        extensions=extensions,
+        ignore_dirs=ignore_dirs,
+        ignore_files=ignore_files,
+        include_binary=args.include_binary,
+        max_file_size=max_file_size
+    )
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FICHIER: project_export_project_export.txt
+================================================================================
+
+# EXPORT DU PROJET: backend
+# DATE: 2026-05-10 23:27:05
+#==============================================================================
+
+
+================================================================================
+FICHIER: cluster_registry.json
+================================================================================
+
+{}
+
+
+================================================================================
+FICHIER: main.py
+================================================================================
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes.cluster_routes import router as cluster_router
+from routes.node_routes import router as node_router
+from routes.data_routes import router as data_router
+from services.registryService import write_registry
+from routes.token_routes import router as token_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    write_registry({})
+    print("📋 Registry cleared on startup")
+    yield
+    write_registry({})
+    print("📋 Registry cleared on shutdown")
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to CassandraEdu API! Visit /docs for documentation."}
+
+app.include_router(node_router, prefix="/api/v1")
+app.include_router(cluster_router, prefix="/api/v1")
+app.include_router(data_router, prefix="/api/v1")
+app.include_router(token_router, prefix="/api/v1") 
+
+
+================================================================================
+FICHIER: parser.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+Script pour parser un dossier de projet et combiner tous les fichiers de code
+en un seul fichier texte, avec des indicateurs clairs pour chaque fichier.
+"""
+
+import os
+import argparse
+from pathlib import Path
+import fnmatch
+
+# Extensions de fichiers de code courantes
+CODE_EXTENSIONS = {
+    # Python
+    '.py', '.pyw', '.ipynb',
+    # Web
+    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.js', '.jsx', '.ts', '.tsx', '.vue',
+    # Backend
+    '.php', '.rb', '.pl', '.pm', '.t', '.java', '.kt', '.kts', '.scala', '.go', '.rs',
+    # C/C++
+    '.c', '.h', '.cpp', '.hpp', '.cc', '.cxx', '.hh', '.hxx',
+    # C#
+    '.cs', '.cshtml', '.vb',
+    # Data & Config
+    '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+    # Shell & Scripts
+    '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+    # SQL
+    '.sql', '.mysql', '.pgsql',
+    # Markdown/Documentation
+    '.md', '.rst', '.txt', '.tex',
+    # Autres
+    '.swift', '.m', '.mm', '.dart', '.lua', '.r', '.jl', '.ex', '.exs'
+}
+
+# Dossiers à ignorer par défaut
+IGNORE_DIRS = {
+    '__pycache__', '.git', '.svn', '.hg', '.idea', '.vscode',
+    'node_modules', 'venv', 'env', '.env', 'dist', 'build',
+    'target', 'bin', 'obj', 'out', '.next', '.nuxt',
+    'vendor', 'bower_components', 'jspm_packages',
+    '__MACOSX', '.DS_Store'
+}
+
+# Fichiers à ignorer par défaut
+IGNORE_FILES = {
+    '*.pyc', '*.pyo', '*.pyd', '*.so', '*.dll', '*.dylib',
+    '*.class', '*.exe', '*.msi', '*.msm', '*.msp',
+    '*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.ico',
+    '*.mp3', '*.mp4', '*.avi', '*.mov', '*.wmv',
+    '*.zip', '*.tar', '*.gz', '*.rar', '*.7z',
+    '*.pdf', '*.doc', '*.docx', '*.xls', '*.xlsx',
+    '*.log', '*.tmp', '*.temp', '*.cache',
+    '.DS_Store', 'Thumbs.db'
+}
+
+def should_ignore(path, ignore_dirs=None, ignore_files=None):
+    """Vérifie si un fichier ou dossier doit être ignoré."""
+    name = path.name
+    
+    # Vérifier les dossiers à ignorer
+    if path.is_dir():
+        if ignore_dirs and name in ignore_dirs:
+            return True
+        if IGNORE_DIRS and name in IGNORE_DIRS:
+            return True
+    
+    # Vérifier les fichiers à ignorer (pattern matching)
+    if path.is_file():
+        if ignore_files:
+            for pattern in ignore_files:
+                if fnmatch.fnmatch(name, pattern):
+                    return True
+        for pattern in IGNORE_FILES:
+            if fnmatch.fnmatch(name, pattern):
+                return True
+    
+    return False
+
+def parse_project(project_path, output_file, extensions=None, ignore_dirs=None, 
+                  ignore_files=None, include_binary=False, max_file_size=10*1024*1024):
+    """
+    Parse un dossier de projet et écrit tous les fichiers dans un fichier de sortie.
+    
+    Args:
+        project_path: Chemin du dossier projet
+        output_file: Chemin du fichier de sortie
+        extensions: Set d'extensions à inclure (None pour toutes les extensions par défaut)
+        ignore_dirs: Set de dossiers à ignorer
+        ignore_files: Set de patterns de fichiers à ignorer
+        include_binary: Inclure les fichiers binaires (déconseillé)
+        max_file_size: Taille max des fichiers en bytes (défaut: 10MB)
+    """
+    project_root = Path(project_path).resolve()
+    output_path = Path(output_file).resolve()
+    
+    if not project_root.exists():
+        print(f"Erreur: Le dossier {project_root} n'existe pas.")
+        return
+    
+    if not project_root.is_dir():
+        print(f"Erreur: {project_root} n'est pas un dossier.")
+        return
+    
+    # Éviter d'écrire dans le dossier projet
+    if output_path.parent == project_root:
+        print("Attention: Le fichier de sortie est dans le dossier projet. Utilisation d'un nom différent...")
+        output_path = project_root / f"project_export_{output_path.name}"
+    
+    files_processed = 0
+    files_skipped = 0
+    files_too_large = 0
+    total_size = 0
+    
+    with open(output_path, 'w', encoding='utf-8') as outfile:
+        outfile.write(f"# EXPORT DU PROJET: {project_root.name}\n")
+        outfile.write(f"# DATE: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        outfile.write("#" + "="*78 + "\n\n")
+        
+        for root, dirs, files in os.walk(project_root):
+            # Convertir le chemin en Path
+            current_dir = Path(root)
+            
+            # Filtrer les dossiers à ignorer (modification sur place)
+            dirs[:] = [d for d in dirs if not should_ignore(current_dir / d, ignore_dirs, {})]
+            
+            # Trier les fichiers pour un ordre cohérent
+            files.sort()
+            
+            for file in files:
+                file_path = current_dir / file
+                
+                # Vérifier si le fichier doit être ignoré
+                if should_ignore(file_path, set(), ignore_files):
+                    files_skipped += 1
+                    continue
+                
+                # Vérifier l'extension
+                if extensions and file_path.suffix.lower() not in extensions:
+                    files_skipped += 1
+                    continue
+                
+                # Vérifier la taille du fichier
+                try:
+                    file_size = file_path.stat().st_size
+                    if file_size > max_file_size:
+                        print(f"Fichier trop grand ignoré: {file_path.relative_to(project_root)} ({file_size/1024/1024:.1f} MB)")
+                        files_too_large += 1
+                        continue
+                    
+                    # Essayer de lire le fichier
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as infile:
+                            content = infile.read()
+                    except UnicodeDecodeError:
+                        if include_binary:
+                            # Lire en binaire et tenter de décoder
+                            with open(file_path, 'rb') as infile:
+                                content = str(infile.read())[:1000] + "... [contenu binaire tronqué]"
+                        else:
+                            print(f"Fichier binaire ignoré: {file_path.relative_to(project_root)}")
+                            files_skipped += 1
+                            continue
+                    
+                    # Écrire l'en-tête du fichier dans la sortie
+                    rel_path = file_path.relative_to(project_root)
+                    outfile.write(f"\n{'='*80}\n")
+                    outfile.write(f"FICHIER: {rel_path}\n")
+                    outfile.write(f"{'='*80}\n\n")
+                    outfile.write(content)
+                    outfile.write("\n\n")
+                    
+                    files_processed += 1
+                    total_size += file_size
+                    
+                    # Afficher la progression
+                    if files_processed % 10 == 0:
+                        print(f"Fichiers traités: {files_processed}")
+                        
+                except Exception as e:
+                    print(f"Erreur lors de la lecture de {file_path}: {e}")
+                    files_skipped += 1
+    
+    # Afficher le résumé
+    print(f"\n{'='*50}")
+    print(f"RÉSUMÉ DE L'EXPORTATION")
+    print(f"{'='*50}")
+    print(f"Dossier projet: {project_root}")
+    print(f"Fichier de sortie: {output_path}")
+    print(f"Fichiers traités: {files_processed}")
+    print(f"Fichiers ignorés: {files_skipped}")
+    print(f"Fichiers trop volumineux: {files_too_large}")
+    print(f"Taille totale: {total_size/1024/1024:.2f} MB")
+    print(f"{'='*50}")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Parse un dossier de projet et combine tous les fichiers de code en un seul fichier texte."
+    )
+    parser.add_argument('project_path', help='Chemin du dossier projet à parser')
+    parser.add_argument('-o', '--output', default='project_export.txt', 
+                       help='Fichier de sortie (défaut: project_export.txt)')
+    parser.add_argument('-e', '--extensions', nargs='+', 
+                       help='Extensions à inclure (ex: .py .js .html)')
+    parser.add_argument('--ignore-dirs', nargs='+', default=[],
+                       help='Dossiers supplémentaires à ignorer')
+    parser.add_argument('--ignore-files', nargs='+', default=[],
+                       help='Patterns de fichiers supplémentaires à ignorer')
+    parser.add_argument('--include-binary', action='store_true',
+                       help='Inclure les fichiers binaires (déconseillé)')
+    parser.add_argument('--max-size', type=int, default=10,
+                       help='Taille max des fichiers en MB (défaut: 10)')
+    parser.add_argument('--use-default-exts', action='store_true',
+                       help='Utiliser les extensions par défaut (tous les fichiers de code courants)')
+    
+    args = parser.parse_args()
+    
+    # Déterminer les extensions à utiliser
+    extensions = None
+    if args.use_default_exts:
+        extensions = CODE_EXTENSIONS
+    elif args.extensions:
+        # S'assurer que les extensions commencent par un point
+        extensions = {ext if ext.startswith('.') else f'.{ext}' for ext in args.extensions}
+    
+    # Combiner les dossiers à ignorer
+    ignore_dirs = set(args.ignore_dirs) if args.ignore_dirs else None
+    
+    # Combiner les patterns de fichiers à ignorer
+    ignore_files = set(args.ignore_files) if args.ignore_files else None
+    
+    # Convertir la taille max en bytes
+    max_file_size = args.max_size * 1024 * 1024
+    
+    # Exécuter le parsing
+    parse_project(
+        args.project_path, 
+        args.output,
+        extensions=extensions,
+        ignore_dirs=ignore_dirs,
+        ignore_files=ignore_files,
+        include_binary=args.include_binary,
+        max_file_size=max_file_size
+    )
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FICHIER: requirements.txt
+================================================================================
+
+fastapi
+uvicorn
+docker
+cassandra-driver
+pydantic
+mmh3
+
+
+================================================================================
+FICHIER: models\__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FICHIER: models\cluster.py
+================================================================================
+
+from pydantic import BaseModel
+from typing import Literal
+
+PartitionerType = Literal["Murmur3Partitioner", "RandomPartitioner", "ByteOrderedPartitioner"]
+
+class ClusterResponse(BaseModel):
+    cluster_name: str
+    partitioner: PartitionerType
+    nodes: list[str]
+    created_at: str
+
+class ClusterStatusResponse(BaseModel):
+    name: str
+    status: str  # "running" | "exited" | "paused"
+class ClusterCreate(BaseModel):
+    cluster_name: str
+    nodes: list[str]
+    partitioner: PartitionerType = "Murmur3Partitioner"  # ← optionnel, défaut Murmur3
+
+class PartitionerChange(BaseModel):
+    partitioner: PartitionerType
+
+
+
+================================================================================
+FICHIER: models\data.py
+================================================================================
+
+from pydantic import BaseModel
+from typing import Literal, Optional
+
+ConsistencyType = Literal["ONE", "QUORUM", "ALL"]
+
+class InsertData(BaseModel):
+    data: dict
+    write_consistency: ConsistencyType = "QUORUM"
+
+class SelectData(BaseModel):
+    filters: Optional[dict] = {}
+    read_consistency: ConsistencyType = "QUORUM"
+
+
+================================================================================
+FICHIER: models\keyspace.py
+================================================================================
+
+from pydantic import BaseModel
+from typing import Literal
+
+StrategyType = Literal["SimpleStrategy", "NetworkTopologyStrategy"]
+
+class KeyspaceCreate(BaseModel):
+    keyspace_name: str
+    replication_factor: int = 1
+    strategy: StrategyType = "SimpleStrategy"
+
+class KeyspaceResponse(BaseModel):
+    keyspace: str
+    strategy: StrategyType
+    replication_factor: int
+
+
+================================================================================
+FICHIER: models\node.py
+================================================================================
+
+from pydantic import BaseModel 
+from enum import Enum
+class NodeCreate(BaseModel):
+    name: str
+    cluster_name: str
+
+class NodeStatus(str, Enum):
+    UP = "UP"
+    DOWN = "DOWN"
+    JOINING = "JOINING"
+    LEAVING = "LEAVING"
+class NodeResponse(BaseModel):
+    id: str
+    name: str
+    ip: str
+    status: NodeStatus
+    rack: str
+    datacenter: str
+    tokens: list[int]
+
+
+
+================================================================================
+FICHIER: models\table.py
+================================================================================
+
+from pydantic import BaseModel
+
+class TableCreate(BaseModel):
+    table_name: str
+    columns: dict
+    partition_key: list[str]
+    clustering_key: list[str] = []
+
+class TableResponse(BaseModel):
+    keyspace: str
+    table: str
+    columns: dict
+    partition_key: list[str]
+    clustering_key: list[str]
+
+
+================================================================================
+FICHIER: models\token.py
+================================================================================
+
+from pydantic import BaseModel
+from typing import List, Optional
+
+class EndpointsRequest(BaseModel):
+    partition_key: str
+
+class NodeEndpoint(BaseModel):
+    ip: str
+    node_name: str
+
+class EndpointsResponse(BaseModel):
+    keyspace: str
+    table: str
+    partition_key: str
+    endpoints: List[NodeEndpoint]
+
+class NodeTokenInfo(BaseModel):
+    ip: str
+    status: str
+    tokens: List[str]
+
+class RingResponse(BaseModel):
+    cluster_name: str
+    nodes: List[NodeTokenInfo]
+
+class NodeDistribution(BaseModel):
+    ip: str
+    node_name: str
+    status: str
+    load: str
+    owns_percent: str
+    tokens: int
+
+class DistributionResponse(BaseModel):
+    cluster_name: str
+    nodes: List[NodeDistribution]
+
+
+================================================================================
+FICHIER: routes\__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FICHIER: routes\cluster_routes.py
+================================================================================
+
+from fastapi import APIRouter
+from datetime import datetime
+from services.dockerService import create_cluster, get_nodes_in_network, client, PARTITIONER_MAP
+from services.registryService import add_cluster, remove_cluster
+from models.cluster import ClusterCreate, ClusterResponse, ClusterStatusResponse, PartitionerChange
+
+router = APIRouter(prefix="/cluster", tags=["Cluster"])
+
+@router.post("/create", response_model=ClusterResponse)
+def create_cluster_route(payload: ClusterCreate):
+    create_cluster(payload.nodes, payload.cluster_name, payload.partitioner)
+    add_cluster(payload.cluster_name, payload.partitioner, payload.nodes)
+    return ClusterResponse(
+        cluster_name=payload.cluster_name,
+        partitioner=payload.partitioner,
+        nodes=payload.nodes,
+        created_at=datetime.now().isoformat()
+    )
+
+@router.get("/{cluster_name}/status", response_model=list[ClusterStatusResponse])
+def cluster_status(cluster_name: str):
+    containers = get_nodes_in_network(cluster_name)
+    return [ClusterStatusResponse(name=c.name, status=c.status) for c in containers]
+
+@router.delete("/{cluster_name}/delete")
+def delete_cluster(cluster_name: str):
+    containers = get_nodes_in_network(cluster_name)
+    for c in containers:
+        c.remove(force=True)
+    remove_cluster(cluster_name)
+    return {"message": f"Cluster '{cluster_name}' deleted"}
+
+@router.post("/{cluster_name}/stop")
+def stop_cluster(cluster_name: str):
+    containers = get_nodes_in_network(cluster_name)
+    for c in containers:
+        c.stop()
+    return {"message": f"Cluster '{cluster_name}' stopped"}
+
+@router.post("/{cluster_name}/start")
+def start_cluster(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    all_containers = client.containers.list(all=True)
+    cassandra_containers = [
+        c for c in all_containers
+        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ]
+    for c in cassandra_containers:
+        c.start()
+    return {"message": f"Cluster '{cluster_name}' started ({len(cassandra_containers)} nodes)"}
+
+@router.post("/{cluster_name}/change-partitioner", response_model=ClusterResponse)
+def change_partitioner(cluster_name: str, payload: PartitionerChange):
+    containers = get_nodes_in_network(cluster_name)
+    node_names = [c.name for c in containers]
+    for c in containers:
+        c.remove(force=True)
+    create_cluster(node_names, cluster_name, payload.partitioner)
+    add_cluster(cluster_name, payload.partitioner, node_names)
+    return ClusterResponse(
+        cluster_name=cluster_name,
+        partitioner=payload.partitioner,
+        nodes=node_names,
+        created_at=datetime.now().isoformat()
+    )
+
+
+================================================================================
+FICHIER: routes\config_routes.py
+================================================================================
+
+
+
+
+================================================================================
+FICHIER: routes\data_routes.py
+================================================================================
+
+from fastapi import APIRouter
+from models.keyspace import KeyspaceCreate, KeyspaceResponse
+from models.table import TableCreate, TableResponse
+from models.data import InsertData, SelectData
+from services.cassandraService import (
+    create_keyspace, list_keyspaces,
+    create_table, list_tables,
+    insert_data, select_data
+)
+
+router = APIRouter(prefix="/data", tags=["Data"])
+
+# ─── Keyspace routes ────────────────────────────────────────────────
+
+@router.post("/{cluster_name}/keyspace", response_model=KeyspaceResponse)
+def create_keyspace_route(cluster_name: str, payload: KeyspaceCreate):
+    return create_keyspace(
+        cluster_name=cluster_name,
+        keyspace_name=payload.keyspace_name,
+        replication_factor=payload.replication_factor,
+        strategy=payload.strategy
+    )
+
+@router.get("/{cluster_name}/keyspaces", response_model=list[str])
+def list_keyspaces_route(cluster_name: str):
+    return list_keyspaces(cluster_name)
+
+
+# ─── Table routes ───────────────────────────────────────────────────
+
+@router.post("/{cluster_name}/{keyspace_name}/table", response_model=TableResponse)
+def create_table_route(cluster_name: str, keyspace_name: str, payload: TableCreate):
+    return create_table(
+        cluster_name=cluster_name,
+        keyspace_name=keyspace_name,
+        table_name=payload.table_name,
+        columns=payload.columns,
+        partition_key=payload.partition_key,
+        clustering_key=payload.clustering_key
+    )
+
+@router.get("/{cluster_name}/{keyspace_name}/tables", response_model=list[str])
+def list_tables_route(cluster_name: str, keyspace_name: str):
+    return list_tables(cluster_name, keyspace_name)
+
+
+# ─── Data routes ────────────────────────────────────────────────────
+
+@router.post("/{cluster_name}/{keyspace_name}/{table_name}/insert")
+def insert_data_route(cluster_name: str, keyspace_name: str, table_name: str, payload: InsertData):
+    return insert_data(
+        cluster_name=cluster_name,
+        keyspace_name=keyspace_name,
+        table_name=table_name,
+        data=payload.data,
+        write_consistency=payload.write_consistency
+    )
+
+@router.post("/{cluster_name}/{keyspace_name}/{table_name}/select")
+def select_data_route(cluster_name: str, keyspace_name: str, table_name: str, payload: SelectData):
+    return select_data(
+        cluster_name=cluster_name,
+        keyspace_name=keyspace_name,
+        table_name=table_name,
+        filters=payload.filters,
+        read_consistency=payload.read_consistency
+    )
+
+
+================================================================================
+FICHIER: routes\node_routes.py
+================================================================================
+
+from fastapi import APIRouter, HTTPException
+from models.node import NodeCreate, NodeResponse
+from services.node_service import create_node, get_all_nodes, delete_node, stop_node, start_node
+
+router = APIRouter(prefix="/nodes", tags=["Nodes"])
+
+@router.post("/", response_model=NodeResponse, status_code=201)
+def create_node_endpoint(payload: NodeCreate):
+    return create_node(payload)
+
+@router.get("/{cluster_name}", response_model=list[NodeResponse])
+def get_all_nodes_endpoint(cluster_name: str):
+    return get_all_nodes(cluster_name)
+
+@router.delete("/{cluster_name}/{node_name}", status_code=200)
+def delete_node_endpoint(cluster_name: str, node_name: str):
+    deleted = delete_node(node_name, cluster_name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' deleted successfully"}
+
+@router.put("/{cluster_name}/{node_name}/stop", status_code=200)
+def stop_node_endpoint(cluster_name: str, node_name: str):
+    stopped = stop_node(node_name, cluster_name)
+    if not stopped:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' stopped successfully"}
+
+@router.put("/{cluster_name}/{node_name}/start", status_code=200)
+def start_node_endpoint(cluster_name: str, node_name: str):
+    started = start_node(node_name, cluster_name)
+    if not started:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' started successfully"}
+
+
+================================================================================
+FICHIER: routes\token_routes.py
+================================================================================
+
+from fastapi import APIRouter, HTTPException
+from models.token import (
+    EndpointsRequest, EndpointsResponse,
+    RingResponse, DistributionResponse
+)
+from services.tokenService import get_endpoints, get_token_ring, get_data_distribution
+
+router = APIRouter(prefix="/token", tags=["Token & Partitioning"])
+
+
+@router.post("/{cluster_name}/{keyspace}/{table}/endpoints", response_model=EndpointsResponse)
+def endpoints(cluster_name: str, keyspace: str, table: str, body: EndpointsRequest):
+    """
+    Retourne les nœuds responsables d'une partition key.
+    Utilise nodetool getendpoints — inclut les réplicas selon le RF.
+    """
+    try:
+        nodes = get_endpoints(cluster_name, keyspace, table, body.partition_key)
+        return EndpointsResponse(
+            keyspace=keyspace,
+            table=table,
+            partition_key=body.partition_key,
+            endpoints=nodes
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{cluster_name}/ring", response_model=RingResponse)
+def ring(cluster_name: str):
+    """
+    Retourne le token ring complet du cluster.
+    Montre la distribution des token ranges par nœud.
+    """
+    try:
+        nodes = get_token_ring(cluster_name)
+        return RingResponse(cluster_name=cluster_name, nodes=nodes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{cluster_name}/distribution", response_model=DistributionResponse)
+def distribution(cluster_name: str):
+    """
+    Retourne le owns% et la charge par nœud.
+    Permet de visualiser l'équilibre de la distribution des données.
+    """
+    try:
+        nodes = get_data_distribution(cluster_name)
+        return DistributionResponse(cluster_name=cluster_name, nodes=nodes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+@router.post("/{cluster_name}/{keyspace}/{table}/explain")
+def explain(cluster_name: str, keyspace: str, table: str, body: EndpointsRequest):
+    try:
+        result = explain_partition(cluster_name, keyspace, table, body.partition_key)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+================================================================================
+FICHIER: services\__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FICHIER: services\cassandraService.py
+================================================================================
+
+from cassandra.io.asyncioreactor import AsyncioConnection
+from cassandra.cluster import Cluster
+from cassandra.policies import DCAwareRoundRobinPolicy
+from cassandra.query import SimpleStatement
+from cassandra import ConsistencyLevel
+from services.dockerService import client
+from cassandra import Unavailable
+from cassandra.cluster import NoHostAvailable
+from fastapi import HTTPException
+import uuid
+
+CONSISTENCY_MAP = {
+    "ONE":    ConsistencyLevel.ONE,
+    "QUORUM": ConsistencyLevel.QUORUM,
+    "ALL":    ConsistencyLevel.ALL,
+}
+
+def get_session(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    all_containers = client.containers.list(all=True)
+
+    contact_points = []
+    for c in all_containers:
+        c.reload()
+        networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if network_name in networks and c.status == "running":
+            ports = c.attrs.get("NetworkSettings", {}).get("Ports", {})
+            host_port_info = ports.get("9042/tcp")
+            if host_port_info:
+                hp = int(host_port_info[0]["HostPort"])
+                contact_points.append(hp)
+
+    if not contact_points:
+        raise Exception(f"No running nodes found for cluster '{cluster_name}'")
+
+    first_port = contact_points[0]
+    print(f"Connecting to {cluster_name} via 127.0.0.1:{first_port}")
+
+    cluster = Cluster(
+        contact_points=["127.0.0.1"],
+        port=first_port,
+        load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
+        protocol_version=5,
+        connect_timeout=30,
+    )
+    session = cluster.connect()
+    session.default_timeout = 30
+    return session
+
+
+def create_keyspace(cluster_name, keyspace_name, replication_factor=1, strategy="SimpleStrategy"):
+    session = get_session(cluster_name)
+    if strategy == "SimpleStrategy":
+        cql = f"""
+            CREATE KEYSPACE IF NOT EXISTS {keyspace_name}
+            WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': {replication_factor}}}
+        """
+    else:
+        cql = f"""
+            CREATE KEYSPACE IF NOT EXISTS {keyspace_name}
+            WITH replication = {{'class': 'NetworkTopologyStrategy', 'datacenter1': {replication_factor}}}
+        """
+    session.execute(cql)
+    print(f"Keyspace '{keyspace_name}' created")
+    return {"keyspace": keyspace_name, "strategy": strategy, "replication_factor": replication_factor}
+
+
+def list_keyspaces(cluster_name: str):
+    session = get_session(cluster_name)
+    rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
+    system_keyspaces = {"system", "system_auth", "system_distributed", "system_schema", "system_traces"}
+    return [row.keyspace_name for row in rows if row.keyspace_name not in system_keyspaces]
+
+
+def create_table(cluster_name, keyspace_name, table_name, columns, partition_key, clustering_key=[]):
+    session = get_session(cluster_name)
+    columns_cql = ", ".join(f"{col} {dtype}" for col, dtype in columns.items())
+    partition = f"({', '.join(partition_key)})" if len(partition_key) > 1 else partition_key[0]
+    if clustering_key:
+        primary_key = f"PRIMARY KEY ({partition}, {', '.join(clustering_key)})"
+    else:
+        primary_key = f"PRIMARY KEY ({partition})"
+    cql = f"""
+        CREATE TABLE IF NOT EXISTS {keyspace_name}.{table_name} (
+            {columns_cql},
+            {primary_key}
+        )
+    """
+    session.execute(cql)
+    print(f"Table '{keyspace_name}.{table_name}' created")
+    return {"keyspace": keyspace_name, "table": table_name, "columns": columns,
+            "partition_key": partition_key, "clustering_key": clustering_key}
+
+
+def list_tables(cluster_name: str, keyspace_name: str):
+    session = get_session(cluster_name)
+    rows = session.execute(
+        "SELECT table_name FROM system_schema.tables WHERE keyspace_name = %s",
+        [keyspace_name]
+    )
+    return [row.table_name for row in rows]
+
+
+def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency="QUORUM"):
+    try:
+        session = get_session(cluster_name)
+        consistency = CONSISTENCY_MAP.get(write_consistency, ConsistencyLevel.QUORUM)
+
+        processed_data = {}
+        for k, v in data.items():
+            processed_data[k] = uuid.uuid4() if v == "uuid()" else v
+
+        columns = ", ".join(processed_data.keys())
+        placeholders = ", ".join(["%s"] * len(processed_data))
+        values = list(processed_data.values())
+
+        cql = f"INSERT INTO {keyspace_name}.{table_name} ({columns}) VALUES ({placeholders})"
+        statement = SimpleStatement(cql, consistency_level=consistency)
+        session.execute(statement, values)
+
+        print(f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
+        return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
+
+    except Unavailable as e:
+        raise HTTPException(status_code=503, detail={
+            "error": "Consistency level not achievable",
+            "consistency_requested": write_consistency,  
+            "required_replicas": e.required_replicas,
+            "alive_replicas": e.alive_replicas,
+            "tip": "Try a lower consistency level or ensure enough nodes are UP"
+        })
+    except NoHostAvailable as e:
+        for host, exc in e.errors.items():
+            if isinstance(exc, Unavailable):
+                raise HTTPException(status_code=503, detail={
+                    "error": "Consistency level not achievable",
+                    "consistency_requested": write_consistency,  
+                    "required_replicas": exc.required_replicas,
+                    "alive_replicas": exc.alive_replicas,
+                    "reason": "Replication factor too low or not enough nodes UP",
+                    "tip": "Increase replication_factor or use a lower consistency level"
+                })
+        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
+
+
+def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consistency="QUORUM"):
+    try:
+        session = get_session(cluster_name)
+        consistency = CONSISTENCY_MAP.get(read_consistency, ConsistencyLevel.QUORUM)
+
+        cql = f"SELECT * FROM {keyspace_name}.{table_name}"
+        values = []
+        if filters:
+            where_clause = " AND ".join(f"{col} = %s" for col in filters.keys())
+            cql += f" WHERE {where_clause}"
+            values = list(filters.values())
+
+        statement = SimpleStatement(cql, consistency_level=consistency)
+        rows = session.execute(statement, values)
+
+        result = [dict(row._asdict()) for row in rows]
+        print(f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
+        return result
+
+    except Unavailable as e:
+        raise HTTPException(status_code=503, detail={
+            "error": "Consistency level not achievable",
+            "consistency_requested": read_consistency,
+            "required_replicas": e.required_replicas,
+            "alive_replicas": e.alive_replicas,
+            "reason": "Replication factor too low or not enough nodes UP",
+            "tip": "Increase replication_factor or use a lower consistency level"
+        })
+    except NoHostAvailable as e:
+        for host, exc in e.errors.items():
+            if isinstance(exc, Unavailable):
+                raise HTTPException(status_code=503, detail={
+                    "error": "Consistency level not achievable",
+                    "consistency_requested": read_consistency,
+                    "required_replicas": exc.required_replicas,
+                    "alive_replicas": exc.alive_replicas,
+                    "reason": "Replication factor too low or not enough nodes UP",
+                    "tip": "Increase replication_factor or use a lower consistency level"
+                })
+        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
+
+
+================================================================================
+FICHIER: services\dockerService.py
+================================================================================
+
+import docker
+import time
+client = docker.from_env()
+# ERREUR 2 — wait_until_up n'est pas défini dans dockerService.py
+# ← ajoute cette fonction
+def wait_until_up(container, node_name, expected_un_count=1, timeout=180):
+    print(f"Waiting for {node_name} ({expected_un_count} UN expected)...")
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            container.reload()
+            if container.status != "running":
+                return False
+            result = container.exec_run("nodetool status")
+            output = result.output.decode()
+            un_count = output.count("UN")
+            print(f"{un_count} UN detected...")
+            if result.exit_code == 0 and un_count >= expected_un_count:
+                print(f"{node_name} sees {un_count} UN nodes")
+                return True
+        except Exception:
+            pass
+        time.sleep(5)
+    return False
+
+def get_or_create_network(network_name: str):
+    networks = [n for n in client.networks.list(names=[network_name]) if n.name == network_name]
+    if networks:
+        print(f"Network {network_name} already exists.")
+        return networks[0]
+    network = client.networks.create(network_name, driver="bridge")
+    print(f"Network {network_name} created.")
+    return network
+def get_existing_seed(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    
+    networks = [n for n in client.networks.list(names=[network_name]) if n.name == network_name]
+    if not networks:
+        return None
+    
+    network = networks[0]
+    network.reload()
+    
+    for container in network.containers:
+        try:
+            result = container.exec_run("nodetool status")
+            if result.exit_code == 0 and "UN" in result.output.decode():
+                ip = container.attrs['NetworkSettings']['Networks'][network_name]['IPAddress']
+                print(f"Found existing seed: {container.name} ({ip})")
+                return ip
+        except Exception:
+            continue
+    
+    return None
+
+PARTITIONER_MAP = {
+    "Murmur3Partitioner": "org.apache.cassandra.dht.Murmur3Partitioner",
+    "RandomPartitioner": "org.apache.cassandra.dht.RandomPartitioner",
+    "ByteOrderedPartitioner": "org.apache.cassandra.dht.ByteOrderedPartitioner",
+}
+
+def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = "Murmur3Partitioner"):
+    network_name = f"cassandra-net-{cluster_name}"
+    
+    try:
+        old = client.containers.get(node_name)
+        old.remove(force=True)
+        print(f"Removed old {node_name}")
+    except docker.errors.NotFound:
+        pass
+
+    # Port hôte unique par nœud — node-1=9042, node-2=9043, etc.
+    existing = client.containers.list(all=True)
+    cassandra_nodes = [
+        c for c in existing
+        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ]
+    host_port = 9042 + len(cassandra_nodes)
+
+    seed = get_existing_seed(cluster_name)
+    if seed:
+        print(f"{node_name} will join cluster via seed {seed}")
+    else:
+        print(f"{node_name} will be the first node (seed = itself)")
+        seed = node_name
+
+    partitioner_full = PARTITIONER_MAP.get(partitioner, PARTITIONER_MAP["Murmur3Partitioner"])
+
+    container = client.containers.run(
+        "cassandra:latest",
+        name=node_name,
+        environment={
+            "CASSANDRA_CLUSTER_NAME": cluster_name,
+            "CASSANDRA_SEEDS": seed,
+            "CASSANDRA_PARTITIONER": partitioner_full,
+            "MAX_HEAP_SIZE": "512M",
+            "HEAP_NEWSIZE": "100M",
+            "CASSANDRA_RING_DELAY_MS": "5000"
+        },
+        ports={"9042/tcp": host_port},  # ← nouveau
+        mem_limit="1g",
+        detach=True,
+        network=network_name
+    )
+    print(f"{node_name} started on host port {host_port} (partitioner: {partitioner})")
+    return container, host_port  # ← retourne aussi le port
+
+def create_cluster(node_names: list, cluster_name: str, partitioner: str = "Murmur3Partitioner"):
+    network_name = f"cassandra-net-{cluster_name}"
+    get_or_create_network(network_name)
+    
+    containers = []
+    for node_name in node_names:
+        container, host_port = create_cassandra_node(node_name, cluster_name, partitioner)  # ← unpack
+        containers.append(container)
+        
+        expected = len(containers)
+        seed_container = containers[0]
+        wait_until_up(seed_container, node_name, expected_un_count=expected)
+    
+    print("\nCluster ready!")
+    result = containers[0].exec_run("nodetool status")
+    print(result.output.decode())
+def get_nodes_in_network(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    network = get_or_create_network(network_name)
+    network.reload()
+    print(f"Nodes in {network_name}: {[container.name for container in network.containers]}")
+    return list(network.containers)
+def delete_cassandra_node(node_name: str,cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.remove(force=True)
+        print(f"{node_name} removed")
+        return True
+    except docker.errors.NotFound:
+        return False
+    
+def stop_cassandra_node(node_name: str, cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.stop()
+        print(f"{node_name} stopped")
+        return True
+    except docker.errors.NotFound:
+        return False
+    
+def start_cassandra_node(node_name: str,cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.start()
+        print(f"{node_name} started")
+        return True
+    except docker.errors.NotFound:
+        return False
+
+
+================================================================================
+FICHIER: services\node_service.py
+================================================================================
+
+import uuid
+from models.node import NodeCreate, NodeResponse, NodeStatus
+from services.dockerService import (
+    create_cassandra_node, get_nodes_in_network,
+    stop_cassandra_node, delete_cassandra_node,
+    start_cassandra_node, wait_until_up, client
+)
+
+def create_node(payload: NodeCreate) -> NodeResponse:
+    network_name = f"cassandra-net-{payload.cluster_name}"
+    node_id = str(uuid.uuid4())
+    
+    container, host_port = create_cassandra_node(node_name=payload.name, cluster_name=payload.cluster_name)
+    
+    containers = get_nodes_in_network(payload.cluster_name)
+    expected = len(containers)
+    
+    print(f"Waiting for {expected} UN nodes...")
+    wait_until_up(container, payload.name, expected_un_count=expected)
+    
+    container.reload()
+    ip = container.attrs["NetworkSettings"]["Networks"][network_name]["IPAddress"]
+    
+    return NodeResponse(
+        id=node_id,
+        name=payload.name,
+        ip=ip,
+        status=NodeStatus.UP,
+        rack="rack1",
+        datacenter="dc1",
+        tokens=[]
+    )
+
+def parse_nodetool_status(output: str) -> dict:
+    status_map = {}
+    for line in output.splitlines():
+        line = line.strip()
+        if len(line) < 2:
+            continue
+        state_code = line[:2]
+        status_mapping = {
+            "UN": NodeStatus.UP,
+            "DN": NodeStatus.DOWN,
+            "UJ": NodeStatus.JOINING,
+            "UL": NodeStatus.LEAVING,
+        }
+        if state_code in status_mapping:
+            parts = line.split()
+            if len(parts) >= 2:
+                ip = parts[1]
+                status_map[ip] = status_mapping[state_code]
+    return status_map
+
+def get_all_nodes(cluster_name: str) -> list[NodeResponse]:
+    network_name = f"cassandra-net-{cluster_name}"
+    containers = client.containers.list(all=True)
+
+    cassandra_containers = []
+    for container in containers:
+        container.reload()
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        if network_name in networks:
+            cassandra_containers.append(container)
+
+    ip_status_map = {}
+    for container in cassandra_containers:
+        if container.status == "running":
+            try:
+                result = container.exec_run("nodetool status")
+                if result.exit_code == 0:
+                    ip_status_map = parse_nodetool_status(result.output.decode())
+                    break
+            except Exception:
+                continue
+
+    result = []
+    for container in cassandra_containers:
+        container.reload()
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        ip = networks.get(network_name, {}).get("IPAddress", "")
+
+        if ip in ip_status_map:
+            status = ip_status_map[ip]
+        elif container.status == "running":
+            status = NodeStatus.UP
+        else:
+            status = NodeStatus.DOWN
+
+        result.append(NodeResponse(
+            id=container.id,
+            name=container.name,
+            ip=ip,
+            status=status,
+            rack="rack1",
+            datacenter="dc1",
+            tokens=[]
+        ))
+    return result
+
+def delete_node(node_name: str, cluster_name: str) -> bool:
+    return delete_cassandra_node(node_name, cluster_name)
+
+def stop_node(node_name: str, cluster_name: str) -> bool:
+    return stop_cassandra_node(node_name, cluster_name)
+
+def start_node(node_name: str, cluster_name: str) -> bool:
+    return start_cassandra_node(node_name, cluster_name)
+
+
+================================================================================
+FICHIER: services\registryService.py
+================================================================================
+
+import json
+import os
+from datetime import datetime
+
+REGISTRY_PATH = "cluster_registry.json"
+
+def write_registry(data: dict):
+    with open(REGISTRY_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+def read_registry() -> dict:
+    if not os.path.exists(REGISTRY_PATH):
+        return {}
+    with open(REGISTRY_PATH, "r") as f:
+        content = f.read().strip()
+        if not content:
+            return {}
+        return json.loads(content)
+
+def add_cluster(cluster_name: str, partitioner: str, nodes: list[str]):
+    registry = read_registry()
+    registry[cluster_name] = {
+        "cluster_name": cluster_name,
+        "partitioner": partitioner,
+        "nodes": nodes,
+        "created_at": datetime.now().isoformat()
+    }
+    write_registry(registry)
+    print(f"Cluster '{cluster_name}' saved to registry")
+
+def remove_cluster(cluster_name: str):
+    registry = read_registry()
+    if cluster_name in registry:
+        del registry[cluster_name]
+        write_registry(registry)
+        print(f"Cluster '{cluster_name}' removed from registry")
+
+def get_cluster(cluster_name: str) -> dict | None:
+    registry = read_registry()
+    return registry.get(cluster_name, None)
+
+
+
+================================================================================
+FICHIER: services\tokenService.py
+================================================================================
+
+from services.dockerService import client
+
+
+def get_running_container(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    all_containers = client.containers.list()
+    for c in all_containers:
+        c.reload()
+        networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if network_name in networks and c.status == "running":
+            return c
+    raise Exception(f"No running container found for cluster '{cluster_name}'")
+
+
+def _build_ip_to_name(cluster_name: str) -> dict:
+    """Helper partagé — mappe IP → nom du container dans le réseau du cluster."""
+    network_name = f"cassandra-net-{cluster_name}"
+    ip_to_name = {}
+    for c in client.containers.list():
+        c.reload()
+        networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if network_name in networks:
+            ip = networks[network_name].get("IPAddress", "")
+            if ip:
+                ip_to_name[ip] = c.name
+    return ip_to_name
+
+
+def get_endpoints(cluster_name: str, keyspace: str, table: str, partition_key: str):
+    container = get_running_container(cluster_name)
+    result = container.exec_run(
+        f"nodetool getendpoints {keyspace} {table} {partition_key}"
+    )
+    if result.exit_code != 0:
+        raise Exception(f"nodetool getendpoints failed: {result.output.decode()}")
+
+    ips = [ip.strip() for ip in result.output.decode().splitlines() if ip.strip()]
+    ip_to_name = _build_ip_to_name(cluster_name)
+
+    return [
+        {"ip": ip, "node_name": ip_to_name.get(ip, "unknown")}
+        for ip in ips
+    ]
+
+
+def get_token_ring(cluster_name: str):
+    container = get_running_container(cluster_name)
+    result = container.exec_run("nodetool ring")
+    if result.exit_code != 0:
+        raise Exception(f"nodetool ring failed: {result.output.decode()}")
+    
+    output = result.output.decode()
+    nodes = {}
+
+    # nodetool ring format: <ip> <rack> <Up/Down> <Normal/Joining/...> <load_val> <load_unit> <owns%> <token>
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 7 and parts[2] in ["Up", "Down"] and parts[3] in ["Normal", "Joining", "Leaving", "Moving"]:
+            ip = parts[0]
+            status = "UN" if parts[2] == "Up" else "DN"
+            token = parts[-1]
+            if ip not in nodes:
+                nodes[ip] = {"ip": ip, "status": status, "tokens": []}
+            nodes[ip]["tokens"].append(token)
+    
+    return list(nodes.values())
+
+def get_data_distribution(cluster_name: str):
+    container = get_running_container(cluster_name)
+    result = container.exec_run("nodetool status")
+    if result.exit_code != 0:
+        raise Exception(f"nodetool status failed: {result.output.decode()}")
+
+    output = result.output.decode()
+    ip_to_name = _build_ip_to_name(cluster_name)
+
+    # Format nodetool status :
+    # <UN/DN>  <ip>  <load_val>  <load_unit>  <tokens>  <owns%>  <host-id>  <rack>
+    distribution = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[0] in ["UN", "DN", "UJ", "UL"]:
+            ip = parts[1]
+            load = parts[2] + " " + parts[3]
+            owns = parts[5] if len(parts) > 5 else "?"
+            distribution.append({
+                "ip": ip,
+                "node_name": ip_to_name.get(ip, "unknown"),
+                "status": parts[0],
+                "load": load,
+                "owns_percent": owns,
+                "tokens": int(parts[4])
+            })
+
+    return distribution
+
+import mmh3  # murmur3
+
+def explain_partition(cluster_name: str, keyspace: str, table: str, partition_key: str):
+    # 1. Calcul du hash Murmur3
+    hash_value = mmh3.hash64(partition_key, signed=True)[0]
+
+    # 2. Récupérer le ring complet
+    ring_nodes = get_token_ring(cluster_name)
+    
+    # 3. Aplatir tous les tokens avec leur nœud
+    all_tokens = []
+    for node in ring_nodes:
+        for token in node["tokens"]:
+            all_tokens.append({
+                "token": int(token),
+                "node": node["ip"],
+                "status": node["status"]
+            })
+    all_tokens.sort(key=lambda x: x["token"])
+
+    # 4. Trouver le nœud responsable (premier token >= hash)
+    responsible = None
+    for t in all_tokens:
+        if t["token"] >= hash_value:
+            responsible = t
+            break
+    if not responsible:
+        responsible = all_tokens[0]  # wrap around
+
+    # 5. Récupérer les replicas via getendpoints
+    replicas = get_endpoints(cluster_name, keyspace, table, partition_key)
+
+    return {
+        "partition_key": partition_key,
+        "murmur3_hash": hash_value,
+        "responsible_token": responsible,
+        "replicas": replicas,
+        "explanation": (
+            f"Le hash Murmur3 de '{partition_key}' est {hash_value}. "
+            f"Sur le ring, le token immédiatement supérieur est {responsible['token']} "
+            f"→ nœud {responsible['node']}. "
+            f"Les réplicas incluent {len(replicas)} nœud(s) selon le RF."
+        )
+    }
+

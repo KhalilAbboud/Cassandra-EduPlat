@@ -1,34 +1,34 @@
 from fastapi import APIRouter, HTTPException
 from models.node import NodeCreate, NodeResponse
-from services.node_service import create_node, get_all_nodes, get_node, delete_node
+from services.node_service import create_node, get_all_nodes, delete_node, stop_node, start_node
 
 router = APIRouter(prefix="/nodes", tags=["Nodes"])
-
-# add node
 
 @router.post("/", response_model=NodeResponse, status_code=201)
 def create_node_endpoint(payload: NodeCreate):
     return create_node(payload)
 
-# get all nodes
+@router.get("/{cluster_name}", response_model=list[NodeResponse])
+def get_all_nodes_endpoint(cluster_name: str):
+    return get_all_nodes(cluster_name)
 
-@router.get("/", response_model=list[NodeResponse])
-def get_all_nodes_endpoint():
-    return get_all_nodes()
+@router.delete("/{cluster_name}/{node_name}", status_code=200)
+def delete_node_endpoint(cluster_name: str, node_name: str):
+    deleted = delete_node(node_name, cluster_name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' deleted successfully"}
 
-# get single node health
+@router.put("/{cluster_name}/{node_name}/stop", status_code=200)
+def stop_node_endpoint(cluster_name: str, node_name: str):
+    stopped = stop_node(node_name, cluster_name)
+    if not stopped:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' stopped successfully"}
 
-@router.get("/{node_id}", response_model=NodeResponse)
-def get_node_endpoint(node_id: str):
-    node = get_node(node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-    return node
-
-# delete single node
-
-@router.delete("/{node_id}")
-def delete_node_endpoint(node_id: str):
-    if not delete_node(node_id):
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-    return {"message": f"Node {node_id} removed"}
+@router.put("/{cluster_name}/{node_name}/start", status_code=200)
+def start_node_endpoint(cluster_name: str, node_name: str):
+    started = start_node(node_name, cluster_name)
+    if not started:
+        raise HTTPException(status_code=404, detail=f"Node '{node_name}' not found")
+    return {"message": f"Node '{node_name}' started successfully"}

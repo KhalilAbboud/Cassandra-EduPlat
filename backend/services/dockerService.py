@@ -1,18 +1,10 @@
 import docker
 import time
-
-_client = None
-
-def get_client():
-    global _client
-    if _client is None:
-        _client = docker.from_env()
-    return _client
-NETWORK_NAME = "cassandra-net"
-CLUSTER_NAME = "TestCluster"
-
+client = docker.from_env()
+# ERREUR 2 — wait_until_up n'est pas défini dans dockerService.py
+# ← ajoute cette fonction
 def wait_until_up(container, node_name, expected_un_count=1, timeout=180):
-    print(f"⏳ Waiting for {node_name} ({expected_un_count} UN expected)...")
+    print(f"Waiting for {node_name} ({expected_un_count} UN expected)...")
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -22,29 +14,27 @@ def wait_until_up(container, node_name, expected_un_count=1, timeout=180):
             result = container.exec_run("nodetool status")
             output = result.output.decode()
             un_count = output.count("UN")
-            print(f"  → {un_count} UN detected...")
+            print(f"{un_count} UN detected...")
             if result.exit_code == 0 and un_count >= expected_un_count:
-                print(f"✅ {node_name} sees {un_count} UN nodes")
+                print(f"{node_name} sees {un_count} UN nodes")
                 return True
         except Exception:
             pass
         time.sleep(5)
     return False
 
-def get_or_create_network():
-    networks = get_client().networks.list(names=[NETWORK_NAME])
-    # Filtrer par nom exact
-    networks = [n for n in networks if n.name == NETWORK_NAME]
+def get_or_create_network(network_name: str):
+    networks = [n for n in client.networks.list(names=[network_name]) if n.name == network_name]
     if networks:
-        print(networks[0].attrs['IPAM']['Config'][0].get('Subnet', 'N/A') + " network already exists.")
+        print(f"Network {network_name} already exists.")
         return networks[0]
-    else:
-        network = get_client().networks.create(NETWORK_NAME, driver="bridge")
-        print(f"✅ Network {NETWORK_NAME} created.")
-        return network
-def get_existing_seed():
-    """Retourne l'IP d'un nœud déjà UP dans le réseau, sinon None"""
-    networks = [n for n in get_client().networks.list(names=[NETWORK_NAME]) if n.name == NETWORK_NAME]
+    network = client.networks.create(network_name, driver="bridge")
+    print(f"Network {network_name} created.")
+    return network
+def get_existing_seed(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    
+    networks = [n for n in client.networks.list(names=[network_name]) if n.name == network_name]
     if not networks:
         return None
     
@@ -55,81 +45,111 @@ def get_existing_seed():
         try:
             result = container.exec_run("nodetool status")
             if result.exit_code == 0 and "UN" in result.output.decode():
-                # Récupérer son IP
-                ip = container.attrs['NetworkSettings']['Networks'][NETWORK_NAME]['IPAddress']
-                print(f"🌱 Found existing seed: {container.name} ({ip})")
+                ip = container.attrs['NetworkSettings']['Networks'][network_name]['IPAddress']
+                print(f"Found existing seed: {container.name} ({ip})")
                 return ip
         except Exception:
             continue
     
-    return None  # Aucun nœud existant → ce nœud sera le seed
+    return None
 
-def create_cassandra_node(node_name, replace_address=None):  # ← add replace_address param
-    get_or_create_network()
+PARTITIONER_MAP = {
+    "Murmur3Partitioner": "org.apache.cassandra.dht.Murmur3Partitioner",
+    "RandomPartitioner": "org.apache.cassandra.dht.RandomPartitioner",
+    "ByteOrderedPartitioner": "org.apache.cassandra.dht.ByteOrderedPartitioner",
+}
+
+def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = "Murmur3Partitioner"):
+    network_name = f"cassandra-net-{cluster_name}"
+    
     try:
-        old = get_client().containers.get(node_name)
+        old = client.containers.get(node_name)
         old.remove(force=True)
-        print(f"🗑️ Removed old {node_name}")
+        print(f"Removed old {node_name}")
     except docker.errors.NotFound:
         pass
+    get_or_create_network(network_name)  
+    # Port hôte unique par nœud — node-1=9042, node-2=9043, etc.
+    existing = client.containers.list(all=True)
+    cassandra_nodes = [
+        c for c in existing
+        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {})
+    ]
+    host_port = 9042 + len(cassandra_nodes)
 
-    seed = get_existing_seed()
-    
+    seed = get_existing_seed(cluster_name)
     if seed:
-        print(f"🔗 {node_name} will join cluster via seed {seed}")
+        print(f"{node_name} will join cluster via seed {seed}")
     else:
-        print(f"🆕 {node_name} will be the first node (seed = itself)")
+        print(f"{node_name} will be the first node (seed = itself)")
         seed = node_name
 
-    # Build environment
-    env = {
-        "CASSANDRA_CLUSTER_NAME": CLUSTER_NAME,
-        "CASSANDRA_SEEDS": seed,
-        "MAX_HEAP_SIZE": "512M",
-        "HEAP_NEWSIZE": "100M",
-        "CASSANDRA_RING_DELAY_MS": "5000",
-        "CASSANDRA_CONSISTENT_RANGEMOVEMENT": "false"
-    }
+    partitioner_full = PARTITIONER_MAP.get(partitioner, PARTITIONER_MAP["Murmur3Partitioner"])
 
-    # ← ADD THIS BLOCK
-    if replace_address:
-        env["JVM_OPTS"] = f"-Dcassandra.replace_address={replace_address}"
-        print(f"🔁 Replacing dead node at {replace_address}")
-
-    container = get_client().containers.run(
+    container = client.containers.run(
         "cassandra:latest",
         name=node_name,
-        environment=env,
+        environment={
+            "CASSANDRA_CLUSTER_NAME": cluster_name,
+            "CASSANDRA_SEEDS": seed,
+            "CASSANDRA_PARTITIONER": partitioner_full,
+            "MAX_HEAP_SIZE": "512M",
+            "HEAP_NEWSIZE": "100M",
+            "CASSANDRA_RING_DELAY_MS": "5000"
+        },
+        ports={"9042/tcp": host_port},  # ← nouveau
         mem_limit="1g",
         detach=True,
-        network=NETWORK_NAME
+        network=network_name
     )
-    print(f"🚀 {node_name} started")
-    return container
+    print(f"{node_name} started on host port {host_port} (partitioner: {partitioner})")
+    return container, host_port  # ← retourne aussi le port
 
-def create_cluster(node_names: list):
-    get_or_create_network()
+def create_cluster(node_names: list, cluster_name: str, partitioner: str = "Murmur3Partitioner"):
+    network_name = f"cassandra-net-{cluster_name}"
+    get_or_create_network(network_name)
     
     containers = []
     for node_name in node_names:
-        container = create_cassandra_node(node_name)
+        container, host_port = create_cassandra_node(node_name, cluster_name, partitioner)  # ← unpack
         containers.append(container)
         
-        # Attendre que ce nœud soit visible dans le cluster avant le suivant
         expected = len(containers)
         seed_container = containers[0]
         wait_until_up(seed_container, node_name, expected_un_count=expected)
     
-    print("\n🎉 Cluster ready!")
+    print("\nCluster ready!")
     result = containers[0].exec_run("nodetool status")
     print(result.output.decode())
-def get_nodes_in_network():
-    network = get_or_create_network()
-    network.reload()  
-    print(f"📋 Nodes in {NETWORK_NAME}: {[container.name for container in network.containers]}")
-    return list(network.containers)  
-
-# i think i didnt modify as much here, i prolly didnt even modify anything beside adding
-# "CASSANDRA_CONSISTENT_RANGEMOVEMENT": "false" so cassandra doesnt go crazy
-# cuz When its set to false, the joining node is allowed to stream data from any available replica rather than the specific one it is taking over for
-# an yea
+def get_nodes_in_network(cluster_name: str):
+    network_name = f"cassandra-net-{cluster_name}"
+    network = get_or_create_network(network_name)
+    network.reload()
+    print(f"Nodes in {network_name}: {[container.name for container in network.containers]}")
+    return list(network.containers)
+def delete_cassandra_node(node_name: str,cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.remove(force=True)
+        print(f"{node_name} removed")
+        return True
+    except docker.errors.NotFound:
+        return False
+    
+def stop_cassandra_node(node_name: str, cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.stop()
+        print(f"{node_name} stopped")
+        return True
+    except docker.errors.NotFound:
+        return False
+    
+def start_cassandra_node(node_name: str,cluster_name: str) -> bool:
+    try:
+        container = client.containers.get(node_name)
+        container.start()
+        print(f"{node_name} started")
+        return True
+    except docker.errors.NotFound:
+        return False

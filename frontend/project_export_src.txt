@@ -1,0 +1,2074 @@
+# EXPORT DU PROJET: src
+# DATE: 2026-05-18 21:17:24
+#==============================================================================
+
+
+================================================================================
+FICHIER: App.css
+================================================================================
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+.app-container {
+  padding: 30px;
+}
+
+.app-title {
+  text-align: center;
+  color: var(--text-h);
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 25px;
+  margin-top: 30px;
+  align-items: start;
+}
+
+.panel:first-child {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+
+.panel:last-child {
+  overflow: visible;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  text-align: left;
+  overflow: visible;
+}
+
+input {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+button {
+  margin: 6px 6px 6px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.ring-box {
+  min-height: 620px;
+  width: 100%;
+  border: 2px dashed var(--border);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 25px;
+  margin-bottom: 20px;
+  overflow: visible;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.token-ring {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 15px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+select {
+  display: block;
+  width: 100%;
+  margin: 8px 0 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.educational-box {
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--accent-bg);
+  margin-bottom: 20px;
+}
+
+.educational-box p {
+  margin: 8px 0;
+}
+
+.educational-box h4 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  color: var(--text-h);
+}
+
+.educational-box ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.educational-box li {
+  margin: 6px 0;
+}
+
+.panel h3 {
+  margin-top: 24px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-h);
+}
+
+.panel h4 {
+  color: var(--text-h);
+}
+
+label {
+  display: block;
+  margin-top: 10px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.node-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.simulation-button {
+  width: 100%;
+  margin-top: 10px;
+  font-weight: 700;
+}
+
+.success-text {
+  color: #16a34a;
+}
+
+.failed-text {
+  color: #dc2626;
+}
+
+.token-ring {
+  max-width: 100%;
+}
+
+.ring-node {
+  fill: var(--bg);
+  stroke: var(--accent-border);
+  stroke-width: 3;
+}
+
+.primary-node {
+  fill: rgba(59, 130, 246, 0.25);
+  stroke: #3b82f6;
+  stroke-width: 4;
+}
+
+.replica-node {
+  fill: rgba(34, 197, 94, 0.2);
+  stroke: #22c55e;
+}
+
+.down-node {
+  fill: rgba(239, 68, 68, 0.18);
+  stroke: #ef4444;
+  opacity: 0.7;
+}
+
+.down-cross {
+  stroke: #ef4444;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.ring-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.token-label {
+  fill: var(--text);
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.hash-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 3;
+}
+
+.hash-label {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-center-title {
+  fill: var(--text-h);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.ring-center-subtitle {
+  fill: var(--text);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ring-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.token-ring {
+  max-width: 100%;
+}
+
+.ownership-arc {
+  fill: none;
+  stroke-width: 12;
+  opacity: 0.28;
+}
+
+.ownership-0 {
+  stroke: #60a5fa;
+}
+
+.ownership-1 {
+  stroke: #34d399;
+}
+
+.ownership-2 {
+  stroke: #fbbf24;
+}
+
+.clockwise-arrow {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5;
+}
+
+.arrow-head {
+  fill: var(--accent);
+}
+
+.clockwise-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-node {
+  fill: var(--bg);
+  stroke: var(--accent-border);
+  stroke-width: 3;
+}
+
+.primary-node {
+  fill: rgba(59, 130, 246, 0.35);
+  stroke: #3b82f6;
+  stroke-width: 5;
+}
+
+.replica-node {
+  fill: rgba(34, 197, 94, 0.25);
+  stroke: #22c55e;
+}
+
+.down-node {
+  fill: rgba(239, 68, 68, 0.2);
+  stroke: #ef4444;
+  opacity: 0.75;
+}
+
+.down-cross {
+  stroke: #ef4444;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.ring-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.token-label {
+  fill: var(--text);
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.csv-data-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 2;
+}
+
+.csv-data-label {
+  fill: var(--text-h);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.manual-hash-point {
+  fill: #facc15;
+  stroke: #ca8a04;
+  stroke-width: 3;
+}
+
+.hash-label {
+  fill: var(--text-h);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ring-center-title {
+  fill: var(--text-h);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.ring-center-subtitle {
+  fill: var(--text);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ring-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.ring-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.yellow {
+  background: #facc15;
+}
+
+.dot.blue {
+  background: #3b82f6;
+}
+
+.dot.green {
+  background: #22c55e;
+}
+
+.dot.red {
+  background: #ef4444;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.node-joining-animation {
+  animation: spin 2s linear infinite;
+}
+
+
+================================================================================
+FICHIER: App.jsx
+================================================================================
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  addNode, removeNode, writeData, readData,
+  getCluster, getNodeHealth, getClusterStatus,
+  deleteData, importCsv, resetCluster
+} from "./services/api";
+import TokenRing from "./components/TokenRing";
+import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
+import "./App.css";
+
+const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
+
+// ── style tokens ─────────────────────────────────────────────────────────────
+const BORDER = "1px solid rgba(255,255,255,0.07)";
+const BG_CARD = "rgba(255,255,255,0.03)";
+const ACCENT = "#20B2AA";
+
+const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
+const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
+const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
+const btn = { width: "100%", marginBottom: 4 };
+const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
+
+// ── sidebar toggle button ─────────────────────────────────────────────────────
+function CollapseBtn({ open, onClick, side }) {
+  return (
+    <button
+      onClick={onClick}
+      title={open ? "Collapse" : "Expand"}
+      style={{
+        position: "absolute",
+        top: "50%",
+        transform: "translateY(-50%)",
+        [side === "left" ? "right" : "left"]: -20,
+        zIndex: 10,
+        width: 32,
+        height: 64,
+        borderRadius: side === "left" ? "0 8px 8px 0" : "8px 0 0 8px",
+        background: "#13132a",
+        border: BORDER,
+        [side === "left" ? "borderLeft" : "borderRight"]: "none",
+        color: ACCENT,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 12,
+        padding: 0,
+        lineHeight: 1,
+        transition: "background 0.2s",
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(32,178,170,0.15)"}
+      onMouseLeave={e => e.currentTarget.style.background = "#13132a"}
+    >
+      {side === "left"
+        ? (open ? "◀" : "▶")
+        : (open ? "▶" : "◀")}
+    </button>
+  );
+}
+
+export default function App() {
+  const [nodes, setNodes] = useState([]);
+  const [leavingNodes, setLeavingNodes] = useState([]);
+
+  // FIX: clusterData est maintenant un dict { name: nodeInfo }
+  // (le backend retourne un array, on le transforme dans fetchCluster)
+  const [clusterData, setClusterData] = useState({});
+
+  // FIX: stockage local simulé des données écrites, pour le tooltip du ring
+  // Structure: { nodeId: [{ key, value }, ...] }
+  const [nodeDataMap, setNodeDataMap] = useState({});
+
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [deleteKey, setDeleteKey] = useState("");
+  const [output, setOutput] = useState(null);
+  const [nodeStatus, setNodeStatus] = useState(null);
+  const [healthNodeId, setHealthNodeId] = useState("");
+  const [clusterStatus, setClusterStatus] = useState(null);
+  const usedNamesRef = useRef(new Set());
+
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreviewRows, setCsvPreviewRows] = useState({});
+  const [csvColumns, setCsvColumns] = useState([]);
+  const [partitionKey, setPartitionKey] = useState("");
+  const [csvError, setCsvError] = useState("");
+  const [csvImportResult, setCsvImportResult] = useState(null);
+  const [csvHasHeader, setCsvHasHeader] = useState(true);
+  const [csvColumnNames, setCsvColumnNames] = useState("");
+  const [csvDistribution, setCsvDistribution] = useState([]);
+
+  const [replicationFactor, setReplicationFactor] = useState(2);
+  const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
+  const [simulationResult, setSimulationResult] = useState(null);
+  const [consistencyResult, setConsistencyResult] = useState(null);
+
+  const getNextName = useCallback(() => {
+    return NAME_POOL.find((name) => !usedNamesRef.current.has(name)) ?? `Node${Date.now()}`;
+  }, []);
+
+  // ── sidebar open/close state ──────────────────────────────────────────────
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+
+  const SIDEBAR_W = 270;
+
+  const replicatedCounts = useMemo(() => {
+    const fromBackend = csvImportResult?.replicated_counts_per_node;
+    if (fromBackend && Object.keys(fromBackend).length > 0) return fromBackend;
+    // derive from client-side simulation when backend doesn't return it
+    const counts = {};
+    csvDistribution.forEach(row => {
+      row.replicas?.forEach(n => {
+        counts[n.id] = (counts[n.id] ?? 0) + 1;
+      });
+    });
+    return counts;
+  }, [csvImportResult, csvDistribution]);
+
+  const replicatedNodes = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
+  const maxReplicated = useMemo(() => {
+    const vals = Object.values(replicatedCounts);
+    return vals.length ? Math.max(...vals) : 0;
+  }, [replicatedCounts]);
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+
+  // FIX: transforme l'array backend en dict { name: nodeInfo }
+  const fetchCluster = useCallback(async () => {
+    try {
+      const arr = await getCluster(); // retourne [{ id, name, ip, status, ... }]
+      if (Array.isArray(arr)) {
+        const dict = {};
+        arr.forEach(n => { dict[n.name] = n; });
+        setClusterData(dict);
+      } else {
+        setClusterData({});
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // FIX: helper pour ajouter des données localement dans nodeDataMap (simulation)
+  const addToNodeDataMap = useCallback((key, value, currentNodes, rf) => {
+    const placement = simulatePlacement({ key, nodes: currentNodes, replicationFactor: rf });
+    if (!placement?.replicas?.length) return;
+    setNodeDataMap(prev => {
+      const next = { ...prev };
+      placement.replicas.forEach(node => {
+        const existing = next[node.id] ?? [];
+        // évite les doublons de clé
+        const filtered = existing.filter(item => item.key !== key);
+        next[node.id] = [...filtered, { key, value }];
+      });
+      return next;
+    });
+  }, []);
+
+  const handleAddNode = useCallback(async (token) => {
+    const id = getNextName();
+    if (usedNamesRef.current.has(id)) return;
+    usedNamesRef.current.add(id);
+
+    const stamp = Date.now();
+
+    setNodes((prev) => [...prev, { id, token, status: "joining", stamp }]);
+
+    try {
+      await addNode(id);
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === id && n.stamp === stamp ? { ...n, status: "up" } : n
+        )
+      );
+      await fetchCluster();
+    } catch (e) {
+      setNodes((prev) => prev.filter((n) => !(n.id === id && n.stamp === stamp)));
+      usedNamesRef.current.delete(id);
+      console.error("addNode failed", e);
+    }
+  }, [fetchCluster, getNextName]);
+
+  const handleRemoveNode = useCallback(async (nodeId) => {
+    const leavingNode = nodes.find((n) => n.id === nodeId);
+    if (leavingNode) {
+      setLeavingNodes((prev) => [...prev, { ...leavingNode, status: "leaving" }]);
+    }
+    usedNamesRef.current.delete(nodeId);
+    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    setSimulationResult(null);
+    setConsistencyResult(null);
+    setTimeout(() => {
+      setLeavingNodes((prev) => prev.filter((n) => n.id !== nodeId));
+    }, 600);
+    try {
+      await removeNode(nodeId);
+      await fetchCluster();
+    } catch (e) {
+      console.error("removeNode failed", e);
+    }
+  }, [fetchCluster, nodes]);
+
+  const toggleNodeStatus = useCallback((nodeId) => {
+    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, status: n.status === "up" ? "down" : "up" } : n));
+  }, []);
+
+  const runSimulation = useCallback(() => {
+    if (!key) return;
+    const result = simulatePlacement({ key, nodes, replicationFactor });
+    setSimulationResult(result);
+    if (result?.replicas)
+      setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
+  }, [key, nodes, replicationFactor, consistencyLevel]);
+
+  const anyJoining = nodes.some((n) => n.status === "joining");
+
+  useEffect(() => {
+    if (simulationResult?.replicas) {
+      setConsistencyResult(checkConsistency({ replicas: simulationResult.replicas, consistencyLevel }));
+    }
+  }, [consistencyLevel, simulationResult]);
+
+  const parseCsvMeta = useCallback((text) => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (!lines.length) return null;
+    const firstL = lines[0];
+    const delim = firstL.includes(";") && !firstL.includes(",") ? ";" : ",";
+    let headers, dataLines;
+    if (csvHasHeader) {
+      headers = firstL.split(delim).map((c) => c.trim());
+      dataLines = lines.slice(1);
+    } else {
+      dataLines = lines;
+      if (csvColumnNames.trim()) {
+        const sep = csvColumnNames.includes(";") ? ";" : ",";
+        headers = csvColumnNames.split(sep).map((c) => c.trim());
+      } else {
+        headers = Array.from({ length: lines[0].split(delim).length }, (_, i) => `col${i + 1}`);
+      }
+    }
+    return { delim, headers, dataLines };
+  }, [csvHasHeader, csvColumnNames]);
+
+  const onFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0] ?? null;
+    setCsvFile(file); setCsvError(""); setCsvImportResult(null);
+    setCsvPreviewRows({}); setCsvDistribution([]);
+    if (!file) return;
+    const text = await file.text();
+    const meta = parseCsvMeta(text);
+    if (!meta) { setCsvError("Empty CSV."); return; }
+    const { delim, headers, dataLines } = meta;
+    setCsvColumns(headers); setPartitionKey(headers[0] ?? "");
+    const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
+    const preview = {};
+    for (let i = 0; i < Math.min(dataLines.length, 12); i++) {
+      const parts = dataLines[i].split(delim).map((c) => c.trim());
+      if (!parts[0]) continue;
+      const rowId = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
+      const rowObj = {};
+      headers.forEach((h, idx) => { if (parts[idx] !== undefined && parts[idx] !== "") rowObj[h] = parts[idx]; });
+      preview[rowId] = rowObj;
+    }
+    if (!Object.keys(preview).length) { setCsvError("Could not parse preview."); return; }
+    setCsvPreviewRows({ [tableName]: preview });
+  }, [parseCsvMeta]);
+
+  const onImportCsv = useCallback(async () => {
+    if (!csvFile) { setCsvError("Choose a CSV file first."); return; }
+    if (!partitionKey) { setCsvError("Choose a partition key."); return; }
+    setCsvError("");
+
+    let backendResult = null;
+    try {
+      backendResult = await importCsv(csvFile, csvHasHeader, csvColumnNames, partitionKey);
+    } catch (err) {
+      setCsvError(err.message ?? "Backend import failed");
+      return;
+    }
+
+    const text = await csvFile.text();
+    const meta = parseCsvMeta(text);
+    if (!meta) { setCsvError("Empty CSV."); return; }
+    const { delim, headers, dataLines } = meta;
+    const dist = [];
+
+    // FIX: met aussi à jour nodeDataMap localement avec le placement simulé
+    const newNodeDataMap = { ...nodeDataMap };
+
+    dataLines.forEach((line, i) => {
+      const parts = line.split(delim).map((c) => c.trim());
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
+      const pval = row[partitionKey];
+      if (!pval) return;
+      const placement = simulatePlacement({ key: String(pval), nodes, replicationFactor });
+      dist.push({ rowId: `row${i + 1}`, partitionValue: pval, hash: placement?.hash, primaryNode: placement?.primaryNode?.id, replicas: placement?.replicas ?? [] });
+
+      // Ajoute dans nodeDataMap local pour le tooltip
+      const valueStr = JSON.stringify(row);
+      placement?.replicas?.forEach(node => {
+        const existing = newNodeDataMap[node.id] ?? [];
+        const filtered = existing.filter(item => item.key !== String(pval));
+        newNodeDataMap[node.id] = [...filtered, { key: String(pval), value: valueStr }];
+      });
+    });
+
+    setNodeDataMap(newNodeDataMap);
+
+    const mergedResult = { ...backendResult };
+    setCsvImportResult(mergedResult);
+    setOutput(mergedResult);
+    setCsvDistribution(dist);
+
+    await fetchCluster();
+  }, [csvFile, partitionKey, csvHasHeader, csvColumnNames, parseCsvMeta, nodes, replicationFactor, fetchCluster, nodeDataMap]);
+
+  // ── sidebar content styles ────────────────────────────────────────────────
+  const sidebarStyle = (open, side) => ({
+    position: "fixed",
+    top: 48,
+    [side]: 0,
+    height: "calc(100vh - 48px)",
+    width: SIDEBAR_W,
+    zIndex: 20,
+    background: "#0a0a14",
+    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+    transform: open ? "translateX(0)" : side === "left" ? `translateX(-100%)` : `translateX(100%)`,
+    ...(side === "left" ? { borderRight: BORDER } : { borderLeft: BORDER }),
+  });
+
+  const sidebarInnerStyle = {
+    width: SIDEBAR_W,
+    height: "100%",
+    overflowX: "hidden",
+    overflowY: "auto",
+    padding: "16px 14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 0,
+    boxSizing: "border-box",
+  };
+
+  // ── render ───────────────────────────────────────────────────────────────
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column",
+      height: "100vh", overflow: "hidden",
+      background: "#0a0a14", color: "#fff",
+      fontFamily: "'JetBrains Mono','Fira Code',monospace",
+    }}>
+
+      {/* ── header ── */}
+      <header style={{
+        height: 48, flexShrink: 0,
+        display: "flex", alignItems: "center", gap: 12, padding: "0 20px",
+        borderBottom: BORDER, background: "rgba(255,255,255,0.02)",
+      }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>CassandraEdu</span>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 2 }}>SIMULATOR</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+          {nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring
+        </span>
+      </header>
+
+      {/* ── body row ── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+
+        {/* ══ LEFT SIDEBAR ══ */}
+        <div style={{ position: "fixed", top: 48, left: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
+          <div style={sidebarStyle(leftOpen, "left")}>
+            <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
+            <div style={sidebarInnerStyle}>
+              <Section title="CSV Import">
+                <label style={lbl}>Replication Factor</label>
+                <select style={inp} value={replicationFactor} onChange={(e) => setReplicationFactor(Number(e.target.value))}>
+                  <option value={1}>RF = 1</option><option value={2}>RF = 2</option><option value={3}>RF = 3</option>
+                </select>
+                <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={csvHasHeader}
+                    onChange={(e) => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); }} />
+                  Has header row
+                </label>
+                {!csvHasHeader && (
+                  <input style={inp} placeholder="col1;col2;col3" value={csvColumnNames}
+                    onChange={(e) => { setCsvColumnNames(e.target.value); setCsvPreviewRows({}); }} />
+                )}
+                <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
+                {csvColumns.length > 0 && (
+                  <>
+                    <label style={lbl}>Partition Key</label>
+                    <select style={inp} value={partitionKey} onChange={(e) => setPartitionKey(e.target.value)}>
+                      {csvColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </>
+                )}
+                <button style={btn} onClick={onImportCsv}>Import CSV</button>
+                {csvError && <pre style={{ color: "#f76a6a", fontSize: 10 }}>{csvError}</pre>}
+              </Section>
+
+              <Section title="Write / Read">
+                <label style={lbl}>Key</label>
+                <input style={inp} placeholder="e.g. user:42" value={key} onChange={(e) => setKey(e.target.value)} />
+                <label style={lbl}>Value</label>
+                <input style={inp} placeholder="e.g. Alice" value={value} onChange={(e) => setValue(e.target.value)} />
+                {/* FIX: après un write, on met à jour nodeDataMap localement */}
+                <button style={btn} onClick={() =>
+                  writeData(key, value)
+                    .then((r) => {
+                      setOutput(r);
+                      addToNodeDataMap(key, value, nodes, replicationFactor);
+                      fetchCluster();
+                    })
+                    .catch((e) => setOutput({ error: e.message }))
+                }>Write</button>
+                <button style={btn} onClick={() =>
+                  readData(key).then((r) => {
+                    try { r.value = JSON.parse(r.value); } catch { /* plain string */ }
+                    setOutput(r);
+                  }).catch((e) => setOutput({ error: e.message }))
+                }>Read</button>
+              </Section>
+
+              <Section title="Delete">
+                <label style={lbl}>Key</label>
+                <input style={inp} placeholder="key to delete" value={deleteKey} onChange={(e) => setDeleteKey(e.target.value)} />
+                <button style={{ ...btn, color: "#f76a6a" }}
+                  onClick={() =>
+                    deleteData(deleteKey)
+                      .then((r) => {
+                        setOutput(r);
+                        // FIX: retire la clé de nodeDataMap localement
+                        setNodeDataMap(prev => {
+                          const next = { ...prev };
+                          Object.keys(next).forEach(nodeId => {
+                            next[nodeId] = next[nodeId].filter(item => item.key !== deleteKey);
+                          });
+                          return next;
+                        });
+                        fetchCluster();
+                      })
+                      .catch((e) => setOutput({ error: e.message }))
+                  }>
+                  Delete
+                </button>
+              </Section>
+            </div>
+          </div>
+        </div>
+
+        {/* ══ CENTER ══ */}
+        <main style={{
+          flex: 1, overflow: "auto",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "24px 20px", gap: 16,
+          minWidth: 0,
+          marginLeft: leftOpen ? SIDEBAR_W : 0,
+          marginRight: rightOpen ? SIDEBAR_W : 0,
+          transition: "margin 0.28s cubic-bezier(0.4,0,0.2,1)",
+        }}>
+          {/* hint bar */}
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
+            <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
+            <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
+            <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
+          </div>
+
+          {/* ring */}
+          <div style={{ width: "100%", maxWidth: 900 }}>
+            {/* FIX: on passe nodeDataMap séparément pour le tooltip (données locales simulées) */}
+            <TokenRing
+              nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
+              nodeDataMap={nodeDataMap}
+              onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
+              simulationResult={simulationResult} csvDistribution={csvDistribution}
+              disabled={anyJoining}
+            />
+          </div>
+
+          {/* bottom strip */}
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/*output*/}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Output</div>
+              {output
+                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {JSON.stringify(output, null, 2)}
+                </div>
+                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
+            </div>
+            {/* simulation settings */}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Simulation Settings</div>
+              <label style={lbl}>Consistency Level</label>
+              <select style={inp} value={consistencyLevel} onChange={(e) => setConsistencyLevel(e.target.value)}>
+                <option value="ONE">ONE</option><option value="QUORUM">QUORUM</option><option value="ALL">ALL</option>
+              </select>
+              <button
+                style={{ ...btn, marginTop: 4, background: "rgba(32,178,170,0.12)", border: `1px solid ${ACCENT}`, color: ACCENT, marginBottom: 0 }}
+                onClick={runSimulation} disabled={!key || nodes.length === 0}>
+                ▶ Simulate Write
+              </button>
+            </div>
+          </div>
+
+          {/* bottom strip row 2 */}
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {/* Node Failure Sim */}
+            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
+              <div style={h3}>Node Failure Sim</div>
+              {nodes.length === 0
+                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
+                : nodes.map((node) => (
+                  <button key={node.id}
+                    style={{
+                      ...btn,
+                      background: node.status === "down" ? "#8b2020" : undefined,
+                      color: node.status === "down" ? "#fff" : undefined,
+                      border: node.status === "down" ? "1px solid #b33030" : undefined,
+                      fontWeight: node.status === "down" ? 700 : undefined,
+                    }}
+                    onClick={() => toggleNodeStatus(node.id)}>
+                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
+                  </button>
+                ))}
+            </div>
+
+            {/* Distribution / Node */}
+            {replicatedNodes.length > 0 && (
+              <div style={{ ...card, flex: 1, minWidth: 200, marginBottom: 0 }}>
+                <div style={h3}>Distribution / Node</div>
+                {replicatedNodes.map((n) => {
+                  const count = replicatedCounts[n] ?? 0;
+                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  return (
+                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
+                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, background: ACCENT, height: 10, transition: "width .4s" }} />
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* simulation result */}
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Simulation Result</div>
+              {simulationResult ? (
+                <div style={{ fontSize: 11, lineHeight: 1.9 }}>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Key: </span>{simulationResult.key}</div>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Hash: </span>{simulationResult.hash}</div>
+                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Primary: </span>{simulationResult.primaryNode?.id ?? "—"}</div>
+                  {simulationResult.replicas.map((n, i) => (
+                    <div key={n.id} style={{ color: ACCENT }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
+                  ))}
+                  {consistencyResult && (
+                    <div style={{
+                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
+                      background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
+                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
+                    }}>
+                      <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
+                        {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
+                      </div>
+                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>
+                        {consistencyResult.consistencyLevel} · needs {consistencyResult.required} · alive {consistencyResult.aliveReplicas}/{consistencyResult.required}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p style={{ opacity: 0.3, fontSize: 11 }}>
+                  {nodes.length === 0 ? "Add nodes first." : "Enter a key and simulate."}
+                </p>
+              )}
+            </div>
+          </div>
+
+        </main>
+
+        {/* ══ RIGHT SIDEBAR ══ */}
+        <div style={{ position: "fixed", top: 48, right: 0, height: "calc(100vh - 48px)", zIndex: 20, width: SIDEBAR_W }}>
+          <div style={sidebarStyle(rightOpen, "right")}>
+            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
+            <div style={sidebarInnerStyle}>
+
+              <Section title="Cluster">
+                {/* FIX: transforme l'array en dict avant de setClusterData */}
+                <button style={btn} onClick={() =>
+                  getCluster()
+                    .then((arr) => {
+                      setOutput(arr);
+                      if (Array.isArray(arr)) {
+                        const dict = {};
+                        arr.forEach(n => { dict[n.name] = n; });
+                        setClusterData(dict);
+                      }
+                    })
+                    .catch((e) => setOutput({ error: e.message }))
+                }>Show Cluster</button>
+              </Section>
+
+              <Section title="Cluster Reset">
+                <button
+                  style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a" }}
+                  onClick={() => {
+                    resetCluster().then(() => {
+                      setNodes([]);
+                      setLeavingNodes([]);
+                      setClusterData({});
+                      setNodeDataMap({}); // FIX: reset du store local
+                      usedNamesRef.current.clear();
+                      setOutput(null);
+                      setNodeStatus(null);
+                      setClusterStatus(null);
+                      setSimulationResult(null);
+                      setConsistencyResult(null);
+                      setCsvFile(null);
+                      setCsvPreviewRows({});
+                      setCsvColumns([]);
+                      setCsvDistribution([]);
+                      setCsvImportResult(null);
+                      setCsvError("");
+                      setKey("");
+                      setValue("");
+                      setDeleteKey("");
+                      setHealthNodeId("");
+                    }).catch(e => setOutput({ error: e.message }));
+                  }}
+                >
+                  Reset Cluster
+                </button>
+              </Section>
+
+              <Section title="Node Health">
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input style={{ ...inp, flex: 1, marginBottom: 0 }} placeholder="NodeA" value={healthNodeId} onChange={(e) => setHealthNodeId(e.target.value)} />
+                  <button style={{ ...btn, width: "auto", flex: "0 0 auto", marginBottom: 0, padding: "6px 10px", fontSize: 10 }}
+                    onClick={() => getNodeHealth(healthNodeId).then(setNodeStatus).catch((e) => setNodeStatus({ error: e.message }))}>
+                    Check
+                  </button>
+                </div>
+                {nodeStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginTop: 6 }}>{JSON.stringify(nodeStatus, null, 2)}</pre>}
+              </Section>
+
+              <Section title="Cluster Status">
+                <button style={{ ...btn, marginBottom: 6 }} onClick={() => getClusterStatus().then(setClusterStatus).catch((e) => setClusterStatus({ error: e.message }))}>Cluster Status</button>
+                {clusterStatus && <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>{JSON.stringify(clusterStatus, null, 2)}</pre>}
+              </Section>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── tiny section wrapper ─────────────────────────────────────────────────────
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{
+        fontSize: 10, letterSpacing: 2, textTransform: "uppercase",
+        color: ACCENT, fontWeight: 700,
+        padding: "10px 2px 8px",
+        borderBottom: "1px solid rgba(32,178,170,0.15)",
+        marginBottom: 10,
+      }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+
+
+================================================================================
+FICHIER: index.css
+================================================================================
+
+:root {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #0a0a14;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #20B2AA;
+  --accent-bg: rgba(32, 178, 170, 0.15);
+  --accent-border: rgba(32, 178, 170, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  width: 100%;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+
+/*token ring*/
+.token-ring {
+  max-width: 100%;
+}
+
+.ring-node {
+  fill: var(--accent-bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.ring-label {
+  fill: var(--text-h);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
+================================================================================
+FICHIER: main.jsx
+================================================================================
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+
+================================================================================
+FICHIER: assets\react.svg
+================================================================================
+
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
+
+
+================================================================================
+FICHIER: assets\vite.svg
+================================================================================
+
+<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+
+
+
+================================================================================
+FICHIER: components\TokenRing.jsx
+================================================================================
+
+import { useState, useRef, useCallback } from "react";
+
+const W = 700, H = 700, CX = 350, CY = 350;
+const RING_R = 220;
+const NODE_R = 28;
+const SNAP_THR = 60;
+const MAX_TOK = 10000;
+const PALETTE = { x: 55, y: 645 };
+
+const NODE_COLORS = [
+  "#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a",
+  "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a",
+];
+
+const tokToAngle = (t) => (t / MAX_TOK) * 2 * Math.PI - Math.PI / 2;
+const angleToTok = (a) => Math.round((((a + Math.PI / 2) / (2 * Math.PI) + 1) % 1) * MAX_TOK);
+const ringXY = (tok) => ({
+  x: CX + RING_R * Math.cos(tokToAngle(tok)),
+  y: CY + RING_R * Math.sin(tokToAngle(tok)),
+});
+const distCenter = (x, y) => Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
+
+const TICKS = [0, 1250, 2500, 3750, 5000, 6250, 7500, 8750];
+
+export default function TokenRing({
+  nodes = [],
+  leavingNodes = [],
+  cluster = {},       // { nodeName: nodeInfo } — métadonnées des nœuds du backend
+  nodeDataMap = {},   // FIX: { nodeId: [{key, value}] } — données locales simulées pour le tooltip
+  onAddNode,
+  onRemoveNode,
+  disabled = false,
+  simulationResult,
+  csvDistribution = [],
+}) {
+  const svgRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  // Palette drag (create new node)
+  const [palDragging, setPalDragging] = useState(false);
+  const [ghostXY, setGhostXY] = useState(PALETTE);
+  const [snapToken, setSnapToken] = useState(null);
+
+  // Node drag — DISABLED
+  const movingIdRef = { current: null };
+
+  // Hover
+  const [hoveredId, setHoveredId] = useState(null);
+  const [tooltipPx, setTooltipPx] = useState({ x: 0, y: 0 });
+  const hoverTimeoutRef = useRef(null);
+
+  // CSV distribution data per node (from the ring visualization)
+  const [csvDataByNode, setCsvDataByNode] = useState({});
+
+  // Color map
+  const nodeColorMap = {};
+  nodes.forEach((n, i) => { nodeColorMap[n.id] = NODE_COLORS[i % NODE_COLORS.length]; });
+
+  // ── Palette drag handlers ──────────────────────────────────────────────
+  const getSvgXY = useCallback((e) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }, []);
+
+  const onPaletteMD = useCallback((e) => {
+    if (nodes.length >= 6 || disabled) return;
+    e.preventDefault();
+    setPalDragging(true);
+    setGhostXY(getSvgXY(e));
+    setSnapToken(null);
+
+    const onMove = (ev) => {
+      const { x, y } = getSvgXY(ev);
+      setGhostXY({ x, y });
+      const d = distCenter(x, y);
+      if (Math.abs(d - RING_R) < SNAP_THR) {
+        const angle = Math.atan2(y - CY, x - CX);
+        const tok = angleToTok(angle);
+        // avoid token collision
+        const taken = nodes.map((n) => n.token);
+        const snapped = taken.includes(tok) ? (tok + 50) % MAX_TOK : tok;
+        setSnapToken(snapped);
+      } else {
+        setSnapToken(null);
+      }
+    };
+
+    const onUp = (ev) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setPalDragging(false);
+      setSnapToken(null);
+      const { x, y } = getSvgXY(ev);
+      const d = distCenter(x, y);
+      if (Math.abs(d - RING_R) < SNAP_THR) {
+        const angle = Math.atan2(y - CY, x - CX);
+        const tok = angleToTok(angle);
+        const taken = nodes.map((n) => n.token);
+        const finalTok = taken.includes(tok) ? (tok + 50) % MAX_TOK : tok;
+        onAddNode?.(finalTok);
+      }
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [nodes, disabled, getSvgXY, onAddNode]);
+
+  // ── Hover handlers ────────────────────────────────────────────────────
+  const onNodeEnter = useCallback((id, e) => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    setHoveredId(id);
+    const { x, y } = getSvgXY(e);
+    setTooltipPx({ x, y });
+  }, [getSvgXY]);
+
+  const onNodeLeave = useCallback(() => {
+    hoverTimeoutRef.current = setTimeout(() => setHoveredId(null), 200);
+  }, []);
+
+  // ── arc helpers ───────────────────────────────────────────────────────
+  const describeArc = (startTok, endTok) => {
+    const start = ringXY(startTok);
+    const end = ringXY(endTok);
+    const startAngle = tokToAngle(startTok);
+    const endAngle = tokToAngle(endTok);
+    let delta = endAngle - startAngle;
+    if (delta < 0) delta += 2 * Math.PI;
+    const large = delta > Math.PI ? 1 : 0;
+    return `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`;
+  };
+
+  // ── render ────────────────────────────────────────────────────────────
+  const sortedNodes = [...nodes].sort((a, b) => a.token - b.token);
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", width: "100%", maxWidth: W, margin: "0 auto" }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}
+        onMouseLeave={() => { if (!palDragging) setHoveredId(null); }}
+      >
+        {/* CSS animations */}
+        <defs>
+          <style>{`
+            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.1; } }
+            .node-leaving { animation: fadeOut 0.6s ease forwards; }
+            .node-leaving-ring { animation: fadeOut 0.6s ease forwards; }
+            @keyframes fadeOut { to { opacity: 0; transform: scale(1.3); } }
+          `}</style>
+        </defs>
+
+        {/* Ring circle */}
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2} />
+
+        {/* Tick marks */}
+        {TICKS.map((t) => {
+          const { x, y } = ringXY(t);
+          const angle = tokToAngle(t);
+          const lx = CX + (RING_R + 22) * Math.cos(angle);
+          const ly = CY + (RING_R + 22) * Math.sin(angle);
+          return (
+            <g key={t}>
+              <line x1={x} y1={y}
+                x2={CX + (RING_R - 8) * Math.cos(angle)}
+                y2={CY + (RING_R - 8) * Math.sin(angle)}
+                stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
+                fontSize={8} fill="rgba(255,255,255,0.15)">{t}</text>
+            </g>
+          );
+        })}
+
+        {/* Ownership arcs */}
+        {sortedNodes.length > 1 && sortedNodes.map((node, i) => {
+          const prev = sortedNodes[(i - 1 + sortedNodes.length) % sortedNodes.length];
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
+          return (
+            <path key={`arc-${node.id}`}
+              d={describeArc(prev.token, node.token)}
+              fill="none" stroke={color} strokeWidth={10} opacity={0.15} />
+          );
+        })}
+
+        {/* CSV hash points */}
+        {csvDistribution.map((row, i) => {
+          if (row.hash == null) return null;
+          const pos = ringXY(row.hash % MAX_TOK);
+          return (
+            <circle key={`csv-${i}`} cx={pos.x} cy={pos.y} r={3}
+              fill="#facc15" stroke="#ca8a04" strokeWidth={1} opacity={0.7} />
+          );
+        })}
+
+        {/* Simulation hash point */}
+        {simulationResult?.hash != null && (() => {
+          const pos = ringXY(simulationResult.hash % MAX_TOK);
+          return (
+            <g>
+              <circle cx={pos.x} cy={pos.y} r={6}
+                fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
+              <text x={pos.x} y={pos.y - 14} textAnchor="middle"
+                fontSize={9} fill="#facc15" fontWeight="700">
+                hash:{simulationResult.hash}
+              </text>
+            </g>
+          );
+        })()}
+
+        {/* Highlight replica arcs from simulation */}
+        {simulationResult?.replicas?.length > 0 && (() => {
+          const primary = simulationResult.primaryNode;
+          if (!primary) return null;
+          const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
+          return simulationResult.replicas.map((replica, i) => {
+            const hashPos = ringXY(simulationResult.hash % MAX_TOK);
+            const nodePos = ringXY(replica.token);
+            return (
+              <line key={`sim-line-${i}`}
+                x1={hashPos.x} y1={hashPos.y} x2={nodePos.x} y2={nodePos.y}
+                stroke={colors[i % colors.length]} strokeWidth={1.5}
+                strokeDasharray="4 3" opacity={0.6} />
+            );
+          });
+        })()}
+
+        {/* Nodes */}
+        {nodes.map((node) => {
+          const pos = ringXY(node.token);
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
+          const isHovered = hoveredId === node.id;
+          const isDown = node.status === "down";
+          const isJoining = node.status === "joining";
+          const isPrimary = simulationResult?.primaryNode?.id === node.id;
+          const isMoving = movingIdRef.current === node.id;
+          const displayColor = isDown ? "#555" : color;
+
+          // FIX: utilise nodeDataMap (données locales simulées) pour le badge
+          const dataLen = (nodeDataMap[node.id]?.length ?? 0) + (csvDistribution.filter(r => r.primaryNode === node.id || r.replicas?.some(rn => rn.id === node.id)).length);
+          const csvBadge = nodeDataMap[node.id]?.length ?? 0;
+
+          const tokenRange = (() => {
+            if (sortedNodes.length <= 1) return `0 – ${MAX_TOK}`;
+            const idx = sortedNodes.findIndex(n => n.id === node.id);
+            const prev = sortedNodes[(idx - 1 + sortedNodes.length) % sortedNodes.length];
+            return `${prev.token} – ${node.token}`;
+          })();
+          const displayToken = sortedNodes.length > 1 ? tokenRange : `${node.token}`;
+
+          return (
+            <g key={node.id}
+              onMouseEnter={(e) => onNodeEnter(node.id, e)}
+              onMouseLeave={onNodeLeave}
+              style={{ cursor: isDown ? "not-allowed" : "pointer" }}
+            >
+              {isPrimary && (
+                <circle cx={pos.x} cy={pos.y} r={NODE_R + 8}
+                  fill="none" stroke="#3b82f6" strokeWidth={2}
+                  strokeDasharray="6 3" opacity={0.7} />
+              )}
+
+              {isJoining && (
+                <circle cx={pos.x} cy={pos.y} r={NODE_R + 10}
+                  fill="none" stroke="#f7c76a" strokeWidth={1.5}
+                  strokeDasharray="4 3" opacity={0.6}
+                  style={{ animation: "spin 3s linear infinite", transformOrigin: `${pos.x}px ${pos.y}px` }}
+                />
+              )}
+
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill={isDown ? "#13132a" : `${displayColor}22`}
+                stroke={displayColor}
+                strokeWidth={isMoving ? 2.5 : isPrimary ? 2.5 : 1.5}
+                strokeDasharray={isMoving ? "5 3" : "none"}
+              />
+
+              {isJoining && (
+                <>
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={1.5}
+                    strokeDasharray="5 5" opacity={0.4}
+                    style={{ animation: "pulse 2s ease-in-out infinite", transformOrigin: `${pos.x}px ${pos.y}px` }} />
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={1}
+                    strokeDasharray="5 5" opacity={0.2}
+                    style={{ animation: "pulse 2s ease-in-out 0.3s infinite", transformOrigin: `${pos.x}px ${pos.y}px` }} />
+                  <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                    fill="transparent" stroke={color} strokeWidth={0.5}
+                    strokeDasharray="5 5" opacity={0.1}
+                    style={{ animation: "pulse 2s ease-in-out 0.6s infinite", transformOrigin: `${pos.x}px ${pos.y}px` }} />
+                </>
+              )}
+
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
+                fontSize={16} fontWeight="800" fill={isDown ? "#666" : displayColor}
+                style={{ pointerEvents: "none" }}>
+                {isJoining ? "⟳" : node.id.replace("Node", "")}
+              </text>
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={7} fill={`${displayColor}88`}
+                style={{ pointerEvents: "none" }}>
+                {isJoining ? "" : node.id}
+              </text>
+
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
+                fontSize={7.5} fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.3)"} style={{ pointerEvents: "none" }}>
+                {isJoining ? "joining..." : displayToken}
+              </text>
+
+              {/* CSV badge - FIX: basé sur nodeDataMap */}
+              {csvBadge > 0 && (
+                <g style={{ pointerEvents: "none" }}>
+                  <circle cx={pos.x + 17} cy={pos.y - 17} r={9} fill={color} />
+                  <text x={pos.x + 17} y={pos.y - 17} textAnchor="middle"
+                    dominantBaseline="middle" fontSize={7.5} fontWeight="bold" fill="white">
+                    {csvBadge}
+                  </text>
+                </g>
+              )}
+
+              {/* Remove × button on hover */}
+              {isHovered && (
+                <g onClick={(e) => { e.stopPropagation(); onRemoveNode?.(node.id); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{ cursor: "pointer" }}>
+                  <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
+                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle"
+                    dominantBaseline="middle" fontSize={13} fill="white"
+                    style={{ pointerEvents: "none" }}>×</text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+
+        {/* Leaving nodes (animated out) */}
+        {leavingNodes.map((node) => {
+          const pos = ringXY(node.token);
+          const color = nodeColorMap[node.id] ?? "#20B2AA";
+          return (
+            <g key={`leaving-${node.id}`} style={{ pointerEvents: "none" }}>
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill={`${color}22`} stroke={color} strokeWidth={1.5}
+                className="node-leaving" />
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12}
+                fill="none" stroke="#f76a6a" strokeWidth={1}
+                strokeDasharray="4 3" opacity={0.6}
+                className="node-leaving-ring" />
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
+                fontSize={16} fontWeight="800" fill={color}
+                className="node-leaving">
+                {node.id.replace("Node", "")}
+              </text>
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={7} fill={`${color}88`}
+                className="node-leaving">
+                {node.id}
+              </text>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
+                fontSize={7.5} fill="#f76a6a99"
+                className="node-leaving">
+                leaving...
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Snap preview */}
+        {snapToken !== null && (() => {
+          const pos = ringXY(snapToken);
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3" />
+              <text x={pos.x} y={pos.y + NODE_R + 13}
+                textAnchor="middle" fontSize={8} fill="#20B2AA">{snapToken}</text>
+            </g>
+          );
+        })()}
+
+        {/* Palette ghost */}
+        {palDragging && (
+          <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R}
+            fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5}
+            style={{ pointerEvents: "none" }} />
+        )}
+
+        {/* Palette node */}
+        {!palDragging && (
+          <g onMouseDown={onPaletteMD} style={{
+            cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab",
+            opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1
+          }}>
+            <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R}
+              fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
+            <text x={PALETTE.x} y={PALETTE.y}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
+            <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14}
+              textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
+              {nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}
+            </text>
+          </g>
+        )}
+
+        {/* Center */}
+        <text x={CX} y={CY - 10} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.2)" letterSpacing={2}>TOKEN RING</text>
+        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">
+          {nodes.length} node{nodes.length !== 1 ? "s" : ""}
+        </text>
+        {nodes.length === 0 && (
+          <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>
+        )}
+      </svg>
+
+      {/* Tooltip */}
+      {hoveredId && movingIdRef.current === null && (() => {
+        const node = nodes.find((n) => n.id === hoveredId);
+        if (!node) return null;
+
+        // FIX: utilise nodeDataMap (données simulées localement) pour le tooltip
+        const data = nodeDataMap[hoveredId] ?? [];
+
+        const color = nodeColorMap[hoveredId] ?? "#20B2AA";
+        const ww = wrapRef.current?.clientWidth ?? 400;
+        const wh = wrapRef.current?.clientHeight ?? 400;
+        const flipX = tooltipPx.x > ww * 0.65;
+        const flipY = tooltipPx.y > wh * 0.70;
+
+        // Infos backend sur le nœud (IP, status réel)
+        const backendInfo = cluster[hoveredId];
+
+        return (
+          <div
+            onMouseEnter={() => { if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current); }}
+            onMouseLeave={onNodeLeave}
+            style={{
+              position: "absolute",
+              left: tooltipPx.x + (flipX ? -240 : 20),
+              top: tooltipPx.y + (flipY ? -280 : 10),
+              width: 220, maxHeight: 300, overflowY: "auto",
+              background: "#0d0d1a",
+              border: `1px solid ${color}55`, borderLeft: `3px solid ${color}`,
+              borderRadius: 8, padding: "12px 14px", zIndex: 30,
+              pointerEvents: "auto",
+              boxShadow: `0 12px 40px rgba(0,0,0,0.6)`,
+              fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace",
+            }}>
+            <div style={{ color, fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{node.id}</div>
+            <div style={{ color: `${color}99`, fontSize: 10, marginBottom: 4 }}>
+              token: {node.token} · {node.status ?? "up"}
+            </div>
+
+            {/* FIX: affiche les infos backend si disponibles (IP réelle) */}
+            {backendInfo && (
+              <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 9, marginBottom: 8, borderBottom: `1px solid ${color}22`, paddingBottom: 6 }}>
+                <div>IP: {backendInfo.ip || "—"}</div>
+                <div>Status: {backendInfo.status || "—"}</div>
+                <div>DC: {backendInfo.datacenter || "—"} / {backendInfo.rack || "—"}</div>
+              </div>
+            )}
+
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, letterSpacing: 1, marginBottom: 5 }}>
+              DATA SIMULÉE ({data.length} {data.length === 1 ? "entry" : "entries"})
+            </div>
+            {data.length === 0
+              ? <div style={{ color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>no data stored</div>
+              : <>
+                {data.map((item, i) => (
+                  <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 3 }}>
+                    <span style={{ color, minWidth: 0, flexShrink: 0, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.key}</span>
+                    <span style={{ color: "rgba(255,255,255,0.25)" }}>→</span>
+                    <span style={{ color: "rgba(255,255,255,0.55)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {String(item.value).slice(0, 30)}{String(item.value).length > 30 ? "…" : ""}
+                    </span>
+                  </div>
+                ))}
+              </>
+            }
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
+              hover × to remove
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+
+
+================================================================================
+FICHIER: services\api.js
+================================================================================
+
+const API_BASE = "http://localhost:8000/api/v1";
+
+// ─── Constantes par défaut ───────────────────────────────────────────
+const CLUSTER   = "TestCluster";
+const KEYSPACE  = "edu_keyspace";
+const TABLE     = "edu_table";
+
+// ─── Nodes ───────────────────────────────────────────────────────────
+
+export async function addNode(name) {
+  const res = await fetch(`${API_BASE}/nodes/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cluster_name: CLUSTER }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `addNode failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// FIX: le backend attend /nodes/{cluster_name}/{node_name}
+export async function removeNode(nodeName) {
+  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `removeNode failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function stopNode(nodeName) {
+  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/stop`, {
+    method: "PUT",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `stopNode failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function startNode(nodeName) {
+  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/start`, {
+    method: "PUT",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `startNode failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// FIX: le backend attend /nodes/{cluster_name}
+export async function getCluster() {
+  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `getCluster failed (${res.status})`);
+  }
+  return res.json(); // retourne un array de NodeResponse
+}
+
+// FIX: le backend attend /cluster/{cluster_name}/status
+export async function getClusterStatus() {
+  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/status`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `getClusterStatus failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createCluster(nodeNames, partitioner = "Murmur3Partitioner") {
+  const res = await fetch(`${API_BASE}/cluster/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cluster_name: CLUSTER, nodes: nodeNames, partitioner }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `createCluster failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteCluster() {
+  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/delete`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `deleteCluster failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function changePartitioner(partitioner) {
+  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/change-partitioner`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partitioner }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `changePartitioner failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ─── Keyspace & Table (setup initial) ───────────────────────────────
+
+export async function createKeyspace(replicationFactor = 1, strategy = "SimpleStrategy") {
+  const res = await fetch(`${API_BASE}/data/${CLUSTER}/keyspace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keyspace_name: KEYSPACE, replication_factor: replicationFactor, strategy }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `createKeyspace failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function createTable(columns, partitionKey) {
+  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/table`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      table_name: TABLE,
+      columns,
+      partition_key: partitionKey,
+      clustering_key: [],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `createTable failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ─── Data ────────────────────────────────────────────────────────────
+
+// FIX: le backend attend POST /data/{cluster}/{keyspace}/{table}/insert
+export async function writeData(data, consistency = "QUORUM") {
+  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/insert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data, write_consistency: consistency }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `writeData failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// FIX: le backend attend POST /data/{cluster}/{keyspace}/{table}/select
+export async function readData(filters = {}, consistency = "QUORUM") {
+  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filters, read_consistency: consistency }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `readData failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ─── Token & Partitioning ────────────────────────────────────────────
+
+export async function getTokenRing() {
+  const res = await fetch(`${API_BASE}/token/${CLUSTER}/ring`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `getTokenRing failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getDistribution() {
+  const res = await fetch(`${API_BASE}/token/${CLUSTER}/distribution`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `getDistribution failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getEndpoints(partitionKey) {
+  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/endpoints`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partition_key: partitionKey }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `getEndpoints failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function explainPartition(partitionKey) {
+  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/explain`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ partition_key: partitionKey }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `explainPartition failed (${res.status})`);
+  }
+  return res.json();
+}
+
+
+================================================================================
+FICHIER: utils\cassandraSimulation.js
+================================================================================
+
+export function hashKey(key) {
+    let h = 0x811c9dc5; // FNV-1a — distributes sequential keys much more evenly
+    for (let i = 0; i < key.length; i++) {
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+        h = h >>> 0;
+    }
+    return h % 10000;
+}
+
+export function simulatePlacement({ key, nodes, replicationFactor }) {
+    if (!key || nodes.length === 0) return null;
+
+    const hash = hashKey(key);
+
+    const aliveNodes = nodes.filter((n) => n.status === "up");
+
+    if (aliveNodes.length === 0) {
+        return {
+            key,
+            hash,
+            primaryNode: null,
+            replicas: [],
+        };
+    }
+
+    const sortedNodes = [...aliveNodes].sort(
+        (a, b) => a.token - b.token
+    );
+
+    const primaryIndex = sortedNodes.findIndex(
+        (node) => hash <= node.token
+    );
+
+    const startIndex = primaryIndex === -1 ? 0 : primaryIndex;
+
+    const replicas = [];
+
+    for (
+        let i = 0;
+        i < Math.min(replicationFactor, sortedNodes.length);
+        i++
+    ) {
+        replicas.push(
+            sortedNodes[(startIndex + i) % sortedNodes.length]
+        );
+    }
+
+    return {
+        key,
+        hash,
+        primaryNode: replicas[0],
+        replicas,
+    };
+}
+
+export function checkConsistency({
+    replicas,
+    consistencyLevel,
+}) {
+    const aliveReplicas = replicas.filter(
+        (node) => node.status === "up"
+    ).length;
+
+    const totalReplicas = replicas.length;
+
+    let required = 1;
+
+    if (consistencyLevel === "QUORUM") {
+        required = Math.floor(totalReplicas / 2) + 1;
+    }
+
+    if (consistencyLevel === "ALL") {
+        required = totalReplicas;
+    }
+
+    return {
+        consistencyLevel,
+        aliveReplicas,
+        required,
+        success: aliveReplicas >= required,
+    };
+}
+
