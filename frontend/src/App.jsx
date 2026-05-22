@@ -7,7 +7,7 @@ import {
   getTokenRing, getDistribution, getEndpoints, explainPartition
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
-import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
+import { simulatePlacement, checkConsistency, hashKey } from "./utils/cassandraSimulation";
 import "./App.css";
 
 const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
@@ -107,8 +107,11 @@ export default function App() {
   const [simulationResult, setSimulationResult] = useState(null);
   const [consistencyResult, setConsistencyResult] = useState(null);
   const [output, setOutput] = useState(null);
+  const [hashingType, setHashingType] = useState("murmur3");
 
-
+  const [writeAnim, setWriteAnim] = useState(null);
+  const [gossipAnim, setGossipAnim] = useState(null);
+  const gossipIntervalRef = useRef(null);
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
@@ -224,9 +227,67 @@ export default function App() {
     if (!key) return;
     const result = simulatePlacement({ key, nodes, replicationFactor });
     setSimulationResult(result);
-    if (result?.replicas)
+    if (result?.replicas) {
       setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
+
+      // Write animation: animate dots traveling from hash point to each replica
+      if (result.hash != null && result.replicas.length > 0) {
+        const targets = result.replicas.map(r => ({ node: r, progress: 0 }));
+        setWriteAnim({ hash: result.hash, targets });
+        const WRITE_DURATION = 1200;
+        const startTime = performance.now();
+        const animateWrite = (now) => {
+          const elapsed = now - startTime;
+          const t = Math.min(elapsed / WRITE_DURATION, 1);
+          setWriteAnim(prev => {
+            if (!prev) return null;
+            return { ...prev, targets: prev.targets.map(tgt => ({ ...tgt, progress: t })) };
+          });
+          if (t < 1) requestAnimationFrame(animateWrite);
+          else setTimeout(() => setWriteAnim(null), 1200);
+        };
+        requestAnimationFrame(animateWrite);
+      }
+    }
   }, [key, nodes, replicationFactor, consistencyLevel]);
+
+  // Gossip animation: periodically send gossip between random alive node pairs
+  useEffect(() => {
+    if (gossipIntervalRef.current) clearInterval(gossipIntervalRef.current);
+    const aliveNodes = nodes.filter(n => n.status === "up" && n.tokens?.length > 0);
+    if (aliveNodes.length < 2) {
+      setGossipAnim(null);
+      return;
+    }
+    gossipIntervalRef.current = setInterval(() => {
+      const alive = nodes.filter(n => n.status === "up" && n.tokens?.length > 0);
+      if (alive.length < 2) return;
+      // Pick 1-2 random gossip pairs
+      const pairs = [];
+      const count = Math.min(alive.length - 1, 1 + Math.floor(Math.random() * 2));
+      for (let p = 0; p < count; p++) {
+        const fromIdx = Math.floor(Math.random() * alive.length);
+        let toIdx = Math.floor(Math.random() * (alive.length - 1));
+        if (toIdx >= fromIdx) toIdx++;
+        pairs.push({ from: alive[fromIdx], to: alive[toIdx], progress: 0 });
+      }
+      setGossipAnim(pairs);
+      const GOSSIP_DURATION = 550;
+      const startTime = performance.now();
+      const animateGossip = (now) => {
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / GOSSIP_DURATION, 1);
+        setGossipAnim(prev => {
+          if (!prev) return null;
+          return prev.map(g => ({ ...g, progress: t }));
+        });
+        if (t < 1) requestAnimationFrame(animateGossip);
+        else setTimeout(() => setGossipAnim(null), 500);
+      };
+      requestAnimationFrame(animateGossip);
+    }, 2500);
+    return () => clearInterval(gossipIntervalRef.current);
+  }, [nodes]);
 
   const anyJoining = nodes.some(n => n.status === "joining");
 
@@ -452,6 +513,14 @@ export default function App() {
                   <option value={3}>RF = 3</option>
                 </select>
 
+                <label style={lbl}>Hashing Type</label>
+                <select style={inp} value={hashingType} onChange={e => setHashingType(e.target.value)}>
+                  <option value="murmur3">Murmur3 (default)</option>
+                  <option value="md5">MD5</option>
+                  <option value="fnv1a">FNV-1a</option>
+                  <option value="xxhash">xxHash</option>
+                </select>
+
                 <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   <input type="checkbox" checked={csvHasHeader}
                     onChange={e => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); setCsvColumns([]); }} />
@@ -604,6 +673,29 @@ export default function App() {
             <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
           </div>
 
+          {replicatedNodes.length > 0 && (
+            <div style={{ ...card, width: "100%", maxWidth: 900, marginBottom: 0 }}>
+              <div style={h3}>Distribution / Node</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {replicatedNodes.map(n => {
+                  const count = replicatedCounts[n] ?? 0;
+                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  return (
+                    <div key={n} style={{ flex: 1, minWidth: 100 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: 10, color: ACCENT }}>{n}</span>
+                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{count}</span>
+                      </div>
+                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, background: ACCENT, height: 8, transition: "width .4s", borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div style={{ width: "100%", maxWidth: 900 }}>
             <TokenRing
               nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
@@ -611,6 +703,8 @@ export default function App() {
               onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
               simulationResult={simulationResult} csvDistribution={csvDistribution}
               disabled={anyJoining}
+              writeAnim={writeAnim}
+              gossipAnim={gossipAnim}
             />
           </div>
 
@@ -619,8 +713,8 @@ export default function App() {
               <div style={h3}>Output</div>
               {output
                 ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                    {JSON.stringify(output, null, 2)}
-                  </div>
+                  {JSON.stringify(output, null, 2)}
+                </div>
                 : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
             </div>
 
@@ -660,24 +754,11 @@ export default function App() {
                 ))}
             </div>
 
-            {replicatedNodes.length > 0 && (
-              <div style={{ ...card, flex: 1, minWidth: 200, marginBottom: 0 }}>
-                <div style={h3}>Distribution / Node</div>
-                {replicatedNodes.map(n => {
-                  const count = replicatedCounts[n] ?? 0;
-                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
-                  return (
-                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
-                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, background: ACCENT, height: 10, transition: "width .4s" }} />
-                      </div>
-                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          </div>
+
+
+
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
 
             <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
               <div style={h3}>Simulation Result</div>

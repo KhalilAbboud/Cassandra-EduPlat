@@ -16,10 +16,10 @@ const PARTITIONERS = {
       { val: -6917529027641081856n, label: "-6.9e18" },
       { val: -4611686018427387904n, label: "-4.6e18" },
       { val: -2305843009213693952n, label: "-2.3e18" },
-      { val: 0n,                   label: "0"       },
-      { val: 2305843009213693952n,  label: "2.3e18"  },
-      { val: 4611686018427387904n,  label: "4.6e18"  },
-      { val: 6917529027641081856n,  label: "6.9e18"  },
+      { val: 0n, label: "0" },
+      { val: 2305843009213693952n, label: "2.3e18" },
+      { val: 4611686018427387904n, label: "4.6e18" },
+      { val: 6917529027641081856n, label: "6.9e18" },
     ],
   },
   md5: {
@@ -55,6 +55,19 @@ function getPartitionerFromNodes(nodes) {
     }
   }
   return "murmur3";
+}
+
+function darkenColor(hex, percent = 20) {
+  if (!hex || !hex.startsWith('#')) return hex;
+  let num = parseInt(hex.replace("#", ""), 16),
+    amt = Math.round(2.55 * percent),
+    R = (num >> 16) - amt,
+    G = (num >> 8 & 0x00FF) - amt,
+    B = (num & 0x0000FF) - amt;
+  R = R < 0 ? 0 : R > 255 ? 255 : R;
+  G = G < 0 ? 0 : G > 255 ? 255 : G;
+  B = B < 0 ? 0 : B > 255 ? 255 : B;
+  return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 const PALETTE = { x: 55, y: 645 };
@@ -128,6 +141,8 @@ export default function TokenRing({
   disabled = false,
   simulationResult,
   csvDistribution = [],
+  writeAnim = null,
+  gossipAnim = null,
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -136,8 +151,11 @@ export default function TokenRing({
   const [ghostXY, setGhostXY] = useState(PALETTE);
   const [snapToken, setSnapToken] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
   const [tooltipPx, setTooltipPx] = useState({ x: 0, y: 0 });
   const hoverTimeoutRef = useRef(null);
+  const hoverDelayRef = useRef(null);
+  const isHoveringMenuRef = useRef(false);
 
   // ── Animation state: for each csv point, track current animated position ──
   // animPoints: Array of { id, x, y, targetX, targetY, done }
@@ -265,12 +283,29 @@ export default function TokenRing({
 
   const onNodeEnter = useCallback((id, e) => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
     setHoveredId(id);
     setTooltipPx(getSvgXY(e));
+    setTooltipVisible(false);
+    hoverDelayRef.current = setTimeout(() => setTooltipVisible(true), 700);
   }, [getSvgXY]);
 
   const onNodeLeave = useCallback(() => {
-    hoverTimeoutRef.current = setTimeout(() => setHoveredId(null), 200);
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      if (isHoveringMenuRef.current) return;
+      setHoveredId(null);
+      setTooltipVisible(false);
+    }, 1200);
+  }, []);
+
+  const onMenuLeave = useCallback(() => {
+    isHoveringMenuRef.current = false;
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredId(null);
+      setTooltipVisible(false);
+    }, 200);
   }, []);
 
   const sortedNodes = useMemo(() =>
@@ -286,7 +321,7 @@ export default function TokenRing({
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}
-        onMouseLeave={() => { if (!palDragging) setHoveredId(null); }}
+        onMouseLeave={() => { if (!palDragging) onNodeLeave(); }}
       >
         <defs>
           <style>{`
@@ -294,11 +329,20 @@ export default function TokenRing({
             @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.1; } }
             @keyframes fadeOut { to { opacity: 0; transform: scale(1.3); } }
             .node-leaving { animation: fadeOut 0.6s ease forwards; }
+            @keyframes gossipRipple {
+              0% { r: 28; opacity: 0.6; stroke-width: 2; }
+              100% { r: 50; opacity: 0; stroke-width: 0.5; }
+            }
           `}</style>
+          <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.0)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0.02)" />
+          </radialGradient>
         </defs>
 
-        {/* Ring */}
-        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2} />
+        {/* Ring - visible gray/white */}
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(200,210,220,0.18)" strokeWidth={2.5} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
 
         {/* Partitioner label */}
         <text x={CX + RING_R + 10} y={CY - RING_R - 10}
@@ -350,7 +394,8 @@ export default function TokenRing({
             const d = `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`;
             return (
               <path key={`vnode-arc-${entry.nodeId}-${String(entry.tok)}`}
-                d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.22} />
+                d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.22}
+                style={{ pointerEvents: "none" }} />
             );
           });
         })()}
@@ -365,15 +410,15 @@ export default function TokenRing({
               return (
                 <circle key={`tok-${node.id}-${i}`}
                   cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5}
-                  fill={color} opacity={i === 0 ? 0.9 : 0.5} />
+                  fill={color} opacity={i === 0 ? 0.9 : 0.5}
+                  style={{ pointerEvents: "none" }} />
               );
             } catch { return null; }
           });
         })}
 
-        {/* ── CSV animated points ── */}
         {animPoints.map((p) => (
-          <g key={p.id}>
+          <g key={p.id} style={{ pointerEvents: "none" }}>
             {/* Trail line from center while animating */}
             {!p.done && (
               <line
@@ -399,7 +444,7 @@ export default function TokenRing({
           try {
             const pos = ringXY(BigInt(String(simulationResult.hash)));
             return (
-              <g>
+              <g style={{ pointerEvents: "none" }}>
                 <circle cx={pos.x} cy={pos.y} r={6} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
                 <text x={pos.x} y={pos.y - 14} textAnchor="middle" fontSize={9} fill="#facc15" fontWeight="700">
                   hash:{String(simulationResult.hash).slice(0, 10)}…
@@ -419,11 +464,73 @@ export default function TokenRing({
               return (
                 <line key={`sim-line-${i}`}
                   x1={hashPos.x} y1={hashPos.y} x2={nodePos.x} y2={nodePos.y}
-                  stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+                  stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}
+                  style={{ pointerEvents: "none" }} />
               );
             } catch { return null; }
           });
         })()}
+
+        {/* Write animation traveling dot */}
+        {writeAnim && (() => {
+          try {
+            const fromPos = ringXY(BigInt(String(writeAnim.hash)));
+            writeAnim.targets.forEach(() => { });
+            return writeAnim.targets.map((target, i) => {
+              const toPos = ringXY(getPrimaryToken(target.node));
+              const t = target.progress ?? 0;
+              const cx = fromPos.x + (toPos.x - fromPos.x) * easeOut(t);
+              const cy = fromPos.y + (toPos.y - fromPos.y) * easeOut(t);
+              const colors = ["#3b82f6", "#22c55e", "#f59e0b"];
+              const color = colors[i % colors.length];
+              const done = t >= 1;
+              return (
+                <g key={`write-anim-${i}`} style={{ pointerEvents: "none" }}>
+                  <line x1={fromPos.x} y1={fromPos.y} x2={cx} y2={cy}
+                    stroke={color} strokeWidth={1.5} opacity={0.4} strokeDasharray="3 2" />
+                  <circle cx={cx} cy={cy} r={done ? 5 : 6}
+                    fill={color} opacity={done ? 0.8 : 1}>
+                    {!done && <animate attributeName="r" values="4;7;4" dur="0.6s" repeatCount="indefinite" />}
+                  </circle>
+                  {done && (
+                    <circle cx={toPos.x} cy={toPos.y} r={NODE_R + 4}
+                      fill="none" stroke={color} strokeWidth={2} opacity={0.5}>
+                      <animate attributeName="opacity" values="0.5;0" dur="0.8s" fill="freeze" />
+                      <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 16} dur="0.8s" fill="freeze" />
+                    </circle>
+                  )}
+                </g>
+              );
+            });
+          } catch { return null; }
+        })()}
+
+        {/* Gossip animation ripples */}
+        {gossipAnim && gossipAnim.map((g, gi) => {
+          // This renders the active gossip synchronization messages passing
+          // state metadata periodically between pairs of nodes on the ring.
+          try {
+            const fromPos = ringXY(getPrimaryToken(g.from));
+            const toPos = ringXY(getPrimaryToken(g.to));
+            const t = g.progress ?? 0;
+            const mx = fromPos.x + (toPos.x - fromPos.x) * easeOut(t);
+            const my = fromPos.y + (toPos.y - fromPos.y) * easeOut(t);
+            return (
+              <g key={`gossip-${gi}`} style={{ pointerEvents: "none" }}>
+                <line x1={fromPos.x} y1={fromPos.y} x2={mx} y2={my}
+                  stroke="#a78bfa" strokeWidth={1} opacity={0.3} strokeDasharray="2 3" />
+                <circle cx={mx} cy={my} r={3} fill="#a78bfa" opacity={0.9}>
+                  <animate attributeName="r" values="2;4;2" dur="0.4s" repeatCount="indefinite" />
+                </circle>
+                {t >= 1 && (
+                  <circle cx={toPos.x} cy={toPos.y} r={NODE_R}
+                    fill="none" stroke="#a78bfa" strokeWidth={1.5}
+                    style={{ animation: 'gossipRipple 0.5s ease-out forwards', transformOrigin: `${toPos.x}px ${toPos.y}px` }} />
+                )}
+              </g>
+            );
+          } catch { return null; }
+        })}
 
         {/* Nodes */}
         {nodes.map((node) => {
@@ -469,12 +576,17 @@ export default function TokenRing({
                   style={{ animation: "pulse 2s ease-in-out infinite" }} />
               )}
               <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800" fill={isDown ? "#666" : displayColor}
+                fontSize={16} fontWeight="800"
+                fill={isDown ? "#555" : darkenColor(displayColor, 20)}
+                stroke="#000" strokeWidth="2.5" paintOrder="stroke" strokeLinejoin="round"
                 style={{ pointerEvents: "none" }}>
                 {isJoining ? "⟳" : node.id.replace("Node", "")}
               </text>
               <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
-                fontSize={7} fill={`${displayColor}88`} style={{ pointerEvents: "none" }}>
+                fontSize={7} fontWeight="700"
+                fill={isDown ? "#444" : darkenColor(displayColor, 25)}
+                stroke="#000" strokeWidth="1.5" paintOrder="stroke" strokeLinejoin="round"
+                style={{ pointerEvents: "none" }}>
                 {isJoining ? "" : node.id}
               </text>
               <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
@@ -500,7 +612,7 @@ export default function TokenRing({
                   </text>
                 </g>
               )}
-              {isHovered && !isJoining && (
+              {isHovered && tooltipVisible && !isJoining && (
                 <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }}
                   onMouseDown={e => e.stopPropagation()}
                   style={{ cursor: "pointer" }}>
@@ -577,7 +689,7 @@ export default function TokenRing({
       </svg>
 
       {/* Tooltip */}
-      {hoveredId && (() => {
+      {hoveredId && tooltipVisible && (() => {
         const node = nodes.find(n => n.id === hoveredId);
         if (!node) return null;
         const data = nodeDataMap[hoveredId] ?? [];
@@ -590,8 +702,11 @@ export default function TokenRing({
 
         return (
           <div
-            onMouseEnter={() => { if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current); }}
-            onMouseLeave={onNodeLeave}
+            onMouseEnter={() => {
+              isHoveringMenuRef.current = true;
+              if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+            }}
+            onMouseLeave={onMenuLeave}
             style={{
               position: "absolute",
               left: tooltipPx.x + (flipX ? -240 : 20),
