@@ -202,20 +202,22 @@ export default function App() {
   const handleRemoveNode = useCallback(async (nodeId) => {
     const leavingNode = nodes.find(n => n.id === nodeId);
     if (leavingNode) {
-      setLeavingNodes(prev => [...prev, { ...leavingNode, status: "leaving" }]);
+      setLeavingNodes(prev => [...prev, { ...leavingNode, status: "leaving", leavingStart: Date.now() }]);
     }
     usedNamesRef.current.delete(nodeId);
     setNodes(prev => prev.filter(n => n.id !== nodeId));
     setSimulationResult(null);
     setConsistencyResult(null);
-    setTimeout(() => {
-      setLeavingNodes(prev => prev.filter(n => n.id !== nodeId));
-    }, 600);
+
+    // Wait for both the real API deletion AND a minimum visual duration
+    const minVisualDuration = new Promise(res => setTimeout(res, 8000));
     try {
-      await removeNode(nodeId);
+      await Promise.all([removeNode(nodeId), minVisualDuration]);
       await fetchCluster();
     } catch (e) {
       console.error("removeNode failed", e);
+    } finally {
+      setLeavingNodes(prev => prev.filter(n => n.id !== nodeId));
     }
   }, [fetchCluster, nodes]);
 

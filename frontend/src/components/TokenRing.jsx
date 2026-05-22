@@ -326,9 +326,27 @@ export default function TokenRing({
         <defs>
           <style>{`
             @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+            @keyframes spinReverse { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
             @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.1; } }
-            @keyframes fadeOut { to { opacity: 0; transform: scale(1.3); } }
-            .node-leaving { animation: fadeOut 0.6s ease forwards; }
+            @keyframes leavingPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 0.15; } }
+            @keyframes leavingFade {
+              0% { opacity: 1; }
+              60% { opacity: 0.7; }
+              85% { opacity: 0.35; }
+              100% { opacity: 0.08; }
+            }
+            @keyframes leavingRipple {
+              0% { r: 28; opacity: 0.5; stroke-width: 2; }
+              100% { r: 60; opacity: 0; stroke-width: 0.3; }
+            }
+            @keyframes leavingShrink {
+              0% { r: 28; }
+              100% { r: 4; }
+            }
+            @keyframes leavingDashScroll {
+              from { stroke-dashoffset: 0; }
+              to { stroke-dashoffset: -40; }
+            }
             @keyframes gossipRipple {
               0% { r: 28; opacity: 0.6; stroke-width: 2; }
               100% { r: 50; opacity: 0; stroke-width: 0.5; }
@@ -625,22 +643,84 @@ export default function TokenRing({
           );
         })}
 
-        {/* Leaving nodes */}
+        {/* Leaving nodes – elaborate red animation mirroring the joining style */}
         {leavingNodes.map((node) => {
           const pos = ringXY(getPrimaryToken(node));
-          const color = nodeColorMap[node.id] ?? "#20B2AA";
           return (
             <g key={`leaving-${node.id}`} style={{ pointerEvents: "none" }}>
+              {/* Outer spinning dashed ring – reverse direction, red */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 10}
+                fill="none" stroke="#f76a6a" strokeWidth={1.5}
+                strokeDasharray="4 3" opacity={0.6}
+                style={{
+                  animation: "spinReverse 2.5s linear infinite",
+                  transformOrigin: `${pos.x}px ${pos.y}px`,
+                }} />
+
+              {/* Second spinning ring – slightly larger, slower, dimmer */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 18}
+                fill="none" stroke="#f76a6a" strokeWidth={0.8}
+                strokeDasharray="8 6" opacity={0.25}
+                style={{
+                  animation: "spin 4s linear infinite",
+                  transformOrigin: `${pos.x}px ${pos.y}px`,
+                }} />
+
+              {/* Pulsing inner dashed ring */}
               <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={`${color}22`} stroke={color} strokeWidth={1.5} className="node-leaving" />
-              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12}
-                fill="none" stroke="#f76a6a" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} className="node-leaving" />
+                fill="transparent" stroke="#f76a6a" strokeWidth={1.5}
+                strokeDasharray="5 5" opacity={0.4}
+                style={{ animation: "leavingPulse 1.8s ease-in-out infinite" }} />
+
+              {/* Repeating outward ripple 1 */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill="none" stroke="#f76a6a" strokeWidth={1.5}
+                style={{
+                  animation: "leavingRipple 2s ease-out infinite",
+                  transformOrigin: `${pos.x}px ${pos.y}px`,
+                }} />
+
+              {/* Repeating outward ripple 2 – offset */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill="none" stroke="#f76a6a" strokeWidth={1}
+                style={{
+                  animation: "leavingRipple 2s ease-out 1s infinite",
+                  transformOrigin: `${pos.x}px ${pos.y}px`,
+                }} />
+
+              {/* Node body – gradually fading */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill="#f76a6a18" stroke="#f76a6a" strokeWidth={1.5}
+                style={{ animation: "leavingFade 9s ease-in forwards" }} />
+
+              {/* Scrolling dash overlay on the node circle */}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R}
+                fill="none" stroke="#f76a6a" strokeWidth={1}
+                strokeDasharray="3 7" opacity={0.3}
+                style={{ animation: "leavingDashScroll 1s linear infinite" }} />
+
+              {/* Node number */}
               <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800" fill={color} className="node-leaving">
+                fontSize={16} fontWeight="800" fill="#f76a6a"
+                stroke="#000" strokeWidth="2.5" paintOrder="stroke" strokeLinejoin="round"
+                style={{ animation: "leavingFade 9s ease-in forwards" }}>
                 {node.id.replace("Node", "")}
               </text>
+
+              {/* Node name label */}
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={7} fontWeight="700" fill="#f76a6a"
+                stroke="#000" strokeWidth="1.5" paintOrder="stroke" strokeLinejoin="round"
+                style={{ animation: "leavingFade 9s ease-in forwards" }}>
+                {node.id}
+              </text>
+
+              {/* Status text */}
               <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7.5} fill="#f76a6a99" className="node-leaving">leaving...</text>
+                fontSize={7.5} fill="#f76a6a"
+                style={{ animation: "leavingPulse 1.5s ease-in-out infinite" }}>
+                leaving cluster...
+              </text>
             </g>
           );
         })}
