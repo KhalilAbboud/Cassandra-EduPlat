@@ -1,5 +1,5 @@
 # EXPORT DU PROJET: frontend
-# DATE: 2026-05-19 22:04:10
+# DATE: 2026-05-27 13:37:19
 #==============================================================================
 
 
@@ -4681,14 +4681,18 @@ FICHIER: vite.config.js
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
+const backendHost = process.env.VITE_API_URL ?? 'http://localhost:8000'
+
 export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8000'
+      '/api': {
+        target: backendHost,
+        changeOrigin: true,
+      }
     }
   },
 })
@@ -5161,47 +5165,37 @@ FICHIER: src\App.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addNode, removeNode, writeData, readData,
-  getCluster, getClusterStatus,
-  deleteCluster, stopNode, startNode,
+  getCluster, deleteCluster,
   createKeyspace, createTable,
-  getTokenRing, getDistribution, getEndpoints, explainPartition
+  getEndpoints, explainPartition, getGossip
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
-import { simulatePlacement, checkConsistency } from "./utils/cassandraSimulation";
+import CAPErrorModal from "./components/CAPErrorModal";
+import { simulatePlacement } from "./utils/cassandraSimulation";
 import "./App.css";
 
 const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
-
 const BORDER = "1px solid rgba(255,255,255,0.07)";
 const BG_CARD = "rgba(255,255,255,0.03)";
 const ACCENT = "#20B2AA";
-
 const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
 const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
 const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
 const btn = { width: "100%", marginBottom: 4 };
 const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
+const COLUMN_TYPES = ["text", "int", "float", "boolean", "uuid", "timestamp", "bigint"];
 
-// ── Poll getCluster until a node has tokens, with timeout ─────────────────────
 async function pollForTokens(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 30000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const tick = async () => {
-      if (Date.now() > deadline) {
-        reject(new Error(`Timeout waiting for tokens on ${nodeId}`));
-        return;
-      }
+      if (Date.now() > deadline) { reject(new Error(`Timeout waiting for tokens on ${nodeId}`)); return; }
       try {
         const arr = await fetchClusterFn();
         const found = Array.isArray(arr) ? arr.find(n => n.name === nodeId) : null;
-        if (found && Array.isArray(found.tokens) && found.tokens.length > 0) {
-          resolve(found);
-        } else {
-          setTimeout(tick, intervalMs);
-        }
-      } catch {
-        setTimeout(tick, intervalMs);
-      }
+        if (found && Array.isArray(found.tokens) && found.tokens.length > 0) resolve(found);
+        else setTimeout(tick, intervalMs);
+      } catch { setTimeout(tick, intervalMs); }
     };
     tick();
   });
@@ -5209,30 +5203,17 @@ async function pollForTokens(nodeId, fetchClusterFn, { intervalMs = 1500, timeou
 
 function CollapseBtn({ open, onClick, side }) {
   return (
-    <button
-      onClick={onClick}
-      title={open ? "Collapse" : "Expand"}
+    <button onClick={onClick}
       style={{
-        position: "absolute",
-        top: "50%",
-        transform: "translateY(-50%)",
-        [side === "left" ? "right" : "left"]: -20,
-        zIndex: 10,
-        width: 32,
-        height: 64,
+        position: "absolute", top: "50%", transform: "translateY(-50%)",
+        [side === "left" ? "right" : "left"]: -20, zIndex: 10,
+        width: 32, height: 64,
         borderRadius: side === "left" ? "0 8px 8px 0" : "8px 0 0 8px",
-        background: "#13132a",
-        border: BORDER,
+        background: "#13132a", border: BORDER,
         [side === "left" ? "borderLeft" : "borderRight"]: "none",
-        color: ACCENT,
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 12,
-        padding: 0,
-        lineHeight: 1,
-        transition: "background 0.2s",
+        color: ACCENT, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 12, padding: 0, lineHeight: 1, transition: "background 0.2s",
       }}
       onMouseEnter={e => e.currentTarget.style.background = "rgba(32,178,170,0.15)"}
       onMouseLeave={e => e.currentTarget.style.background = "#13132a"}
@@ -5242,19 +5223,56 @@ function CollapseBtn({ open, onClick, side }) {
   );
 }
 
+function Tabs({ tabs, active, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 2, marginBottom: 10, borderBottom: "1px solid rgba(32,178,170,0.15)" }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)}
+          style={{
+            flex: 1, padding: "5px 4px", fontSize: 10, cursor: "pointer",
+            background: active === t.id ? "rgba(32,178,170,0.15)" : "transparent",
+            border: "none", borderBottom: active === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
+            color: active === t.id ? ACCENT : "rgba(255,255,255,0.4)",
+            fontWeight: active === t.id ? 700 : 400,
+            fontFamily: "inherit", letterSpacing: 1, transition: "all 0.15s",
+          }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [nodes, setNodes] = useState([]);
   const [leavingNodes, setLeavingNodes] = useState([]);
   const [clusterData, setClusterData] = useState({});
   const [nodeDataMap, setNodeDataMap] = useState({});
-
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("");
-  const [clusterStatus, setClusterStatus] = useState(null);
   const usedNamesRef = useRef(new Set());
+  const clusterInitializedRef = useRef(false);
+
+  const [clusterName, setClusterName] = useState("TestCluster");
+  const [editableClusterName, setEditableClusterName] = useState("TestCluster");
+  const [hashingType, setHashingType] = useState("murmur3");
+
+  const [keyspaceName, setKeyspaceName] = useState("edu_keyspace");
+  const [strategy, setStrategy] = useState("SimpleStrategy");
+  const [replicationFactor, setReplicationFactor] = useState(2);
+  const [tableName, setTableName] = useState("edu_table");
+  const [columns, setColumns] = useState([
+    { name: "id", type: "text", isPartitionKey: true },
+    { name: "value", type: "text", isPartitionKey: false },
+  ]);
+  const [schemaReady, setSchemaReady] = useState(false);
+
+  const [dataTab, setDataTab] = useState("manual");
+
+  const [rowValues, setRowValues] = useState({});
+  const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
+  const [filterKey, setFilterKey] = useState("");
+  const [output, setOutput] = useState(null);
 
   const [csvFile, setCsvFile] = useState(null);
-  const [csvPreviewRows, setCsvPreviewRows] = useState({});
   const [csvColumns, setCsvColumns] = useState([]);
   const [partitionKey, setPartitionKey] = useState("");
   const [csvError, setCsvError] = useState("");
@@ -5263,45 +5281,32 @@ export default function App() {
   const [csvColumnNames, setCsvColumnNames] = useState("");
   const [csvDistribution, setCsvDistribution] = useState([]);
 
-  const [replicationFactor, setReplicationFactor] = useState(2);
-  const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
-  const [simulationResult, setSimulationResult] = useState(null);
-  const [consistencyResult, setConsistencyResult] = useState(null);
-  const [output, setOutput] = useState(null);
+  const [writeFlowAnim, setWriteFlowAnim] = useState(null);
+  const [gossipAnim, setGossipAnim] = useState(null);
+  const gossipIntervalRef = useRef(null);
+  const prevGossipRef = useRef({});
+
+  // ─── CAP Error Modal ──────────────────────────────────────────────
+  const [capError, setCapError] = useState(null);
 
   const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  const SIDEBAR_W = 290;
 
-  const SIDEBAR_W = 270;
+  const partitionKeys = useMemo(() => columns.filter(c => c.isPartitionKey).map(c => c.name), [columns]);
+  const primaryPartitionKey = partitionKeys[0] ?? "";
 
-  const getNextName = useCallback(() => {
-    return NAME_POOL.find((name) => !usedNamesRef.current.has(name)) ?? `Node${Date.now()}`;
-  }, []);
+  const getNextName = useCallback(() =>
+    NAME_POOL.find(n => !usedNamesRef.current.has(n)) ?? `Node${Date.now()}`, []);
 
   const replicatedCounts = useMemo(() => {
-    const fromBackend = csvImportResult?.replicated_counts_per_node;
-    if (fromBackend && Object.keys(fromBackend).length > 0) return fromBackend;
     const counts = {};
-    csvDistribution.forEach(row => {
-      row.replicas?.forEach(n => {
-        counts[n.id] = (counts[n.id] ?? 0) + 1;
-      });
-    });
+    csvDistribution.forEach(row => row.replicas?.forEach(n => { counts[n.id] = (counts[n.id] ?? 0) + 1; }));
     return counts;
-  }, [csvImportResult, csvDistribution]);
-
+  }, [csvDistribution]);
   const replicatedNodes = useMemo(() => Object.keys(replicatedCounts).sort(), [replicatedCounts]);
-  const maxReplicated = useMemo(() => {
-    const vals = Object.values(replicatedCounts);
-    return vals.length ? Math.max(...vals) : 0;
-  }, [replicatedCounts]);
+  const maxReplicated = useMemo(() => { const v = Object.values(replicatedCounts); return v.length ? Math.max(...v) : 0; }, [replicatedCounts]);
 
-  // Raw getCluster fetch (returns array)
-  const fetchClusterRaw = useCallback(async () => {
-    const arr = await getCluster();
-    return arr;
-  }, []);
-
+  const fetchClusterRaw = useCallback(async () => await getCluster(clusterName), [clusterName]);
   const fetchCluster = useCallback(async () => {
     try {
       const arr = await fetchClusterRaw();
@@ -5309,93 +5314,204 @@ export default function App() {
         const dict = {};
         arr.forEach(n => { dict[n.name] = n; });
         setClusterData(dict);
-      } else {
-        setClusterData({});
       }
     } catch { /* ignore */ }
   }, [fetchClusterRaw]);
 
-  const addToNodeDataMap = useCallback((k, v, currentNodes, rf) => {
-    const placement = simulatePlacement({ key: k, nodes: currentNodes, replicationFactor: rf });
+  const addToNodeDataMap = useCallback((rowData, currentNodes, rf) => {
+    const pkVal = rowData[primaryPartitionKey] ?? Object.values(rowData)[0] ?? "";
+    const placement = simulatePlacement({ key: String(pkVal), nodes: currentNodes, replicationFactor: rf, hashingType });
     if (!placement?.replicas?.length) return;
     setNodeDataMap(prev => {
       const next = { ...prev };
       placement.replicas.forEach(node => {
         const existing = next[node.id] ?? [];
-        const filtered = existing.filter(item => item.key !== k);
-        next[node.id] = [...filtered, { key: k, value: v }];
+        next[node.id] = [...existing.filter(i => i.key !== String(pkVal)), { key: String(pkVal), value: JSON.stringify(rowData) }];
       });
       return next;
     });
-  }, []);
+  }, [primaryPartitionKey, hashingType]);
 
-  // ── handleAddNode with polling ────────────────────────────────────────────
+  const commitClusterName = useCallback((name) => {
+    const trimmed = name.trim() || "TestCluster";
+    if (trimmed === clusterName) return;
+    setClusterName(trimmed);
+    setEditableClusterName(trimmed);
+    clusterInitializedRef.current = false;
+    setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
+    usedNamesRef.current.clear();
+    setOutput(null); setSchemaReady(false); prevGossipRef.current = {};
+    setCsvFile(null); setCsvColumns([]); setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
+    setRowValues({});
+  }, [clusterName]);
+
   const handleAddNode = useCallback(async (token) => {
     const id = getNextName();
     if (usedNamesRef.current.has(id)) return;
     usedNamesRef.current.add(id);
     const stamp = Date.now();
-
     setNodes(prev => [...prev, { id, token, tokens: [], status: "joining", stamp }]);
-
     try {
-      await addNode(id);
+      if (!clusterInitializedRef.current) {
+        clusterInitializedRef.current = true;
+        try { await deleteCluster(clusterName); } catch { /* may not exist */ }
+      }
+      await addNode(id, clusterName);
       const nodeInfo = await pollForTokens(id, fetchClusterRaw);
-      setNodes(prev =>
-        prev.map(n =>
-          n.id === id && n.stamp === stamp
-            ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? "" }
-            : n
-        )
-      );
+      setNodes(prev => prev.map(n => n.id === id && n.stamp === stamp
+        ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? "" } : n));
       await fetchCluster();
     } catch (e) {
       setNodes(prev => prev.filter(n => !(n.id === id && n.stamp === stamp)));
       usedNamesRef.current.delete(id);
-      console.error("addNode failed:", e.message);
       setOutput({ error: e.message });
     }
-  }, [fetchCluster, fetchClusterRaw, getNextName]);
+  }, [clusterName, fetchCluster, fetchClusterRaw, getNextName]);
 
   const handleRemoveNode = useCallback(async (nodeId) => {
-    const leavingNode = nodes.find(n => n.id === nodeId);
-    if (leavingNode) {
-      setLeavingNodes(prev => [...prev, { ...leavingNode, status: "leaving" }]);
-    }
+    const leaving = nodes.find(n => n.id === nodeId);
+    if (leaving) setLeavingNodes(prev => [...prev, { ...leaving, status: "leaving" }]);
     usedNamesRef.current.delete(nodeId);
     setNodes(prev => prev.filter(n => n.id !== nodeId));
-    setSimulationResult(null);
-    setConsistencyResult(null);
-    setTimeout(() => {
-      setLeavingNodes(prev => prev.filter(n => n.id !== nodeId));
-    }, 600);
-    try {
-      await removeNode(nodeId);
-      await fetchCluster();
-    } catch (e) {
-      console.error("removeNode failed", e);
-    }
-  }, [fetchCluster, nodes]);
+    setTimeout(() => setLeavingNodes(prev => prev.filter(n => n.id !== nodeId)), 600);
+    try { await removeNode(nodeId, clusterName); await fetchCluster(); } catch (e) { console.error("removeNode failed", e); }
+  }, [clusterName, fetchCluster, nodes]);
 
-  const toggleNodeStatus = useCallback((nodeId) => {
-    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: n.status === "up" ? "down" : "up" } : n));
-  }, []);
+  useEffect(() => {
+    if (gossipIntervalRef.current) clearInterval(gossipIntervalRef.current);
+    const aliveNodes = nodes.filter(n => n.status === "up" && n.tokens?.length > 0);
+    if (aliveNodes.length < 2) { setGossipAnim(null); return; }
 
-  const runSimulation = useCallback(() => {
-    if (!key) return;
-    const result = simulatePlacement({ key, nodes, replicationFactor });
-    setSimulationResult(result);
-    if (result?.replicas)
-      setConsistencyResult(checkConsistency({ replicas: result.replicas, consistencyLevel }));
-  }, [key, nodes, replicationFactor, consistencyLevel]);
+    const runGossip = async () => {
+      try {
+        const data = await getGossip(clusterName);
+        const gossipNodes = data?.nodes ?? [];
+        if (gossipNodes.length < 2) return;
+        const prev = prevGossipRef.current;
+        const changed = gossipNodes.filter(n => {
+          const old = prev[n.ip];
+          return !old || old.heartbeat !== n.heartbeat || old.generation !== n.generation;
+        });
+        const next = {};
+        gossipNodes.forEach(n => { next[n.ip] = { heartbeat: n.heartbeat, generation: n.generation }; });
+        prevGossipRef.current = next;
+        const pool = changed.length >= 2 ? changed : gossipNodes;
+        const fromNode = pool[Math.floor(Math.random() * pool.length)];
+        let toNode = pool.filter(n => n.ip !== fromNode.ip)[Math.floor(Math.random() * (pool.length - 1))];
+        if (!toNode) toNode = gossipNodes.find(n => n.ip !== fromNode.ip);
+        if (!toNode) return;
+        const fromFront = aliveNodes.find(n => n.id === fromNode.node_name) ?? aliveNodes[0];
+        const toFront = aliveNodes.find(n => n.id === toNode.node_name) ?? aliveNodes[1];
+        if (!fromFront || !toFront || fromFront.id === toFront.id) return;
+        const TOTAL = 5000;
+        const startTime = performance.now();
+        setGossipAnim({ from: fromFront, to: toFront, fromData: fromNode, toData: toNode, progress: 0 });
+        const animate = (now) => {
+          const t = Math.min((now - startTime) / TOTAL, 1);
+          setGossipAnim(prev => prev ? { ...prev, progress: t } : null);
+          if (t < 1) requestAnimationFrame(animate);
+          else setTimeout(() => setGossipAnim(null), 1200);
+        };
+        requestAnimationFrame(animate);
+      } catch { /* silencieux */ }
+    };
+
+    runGossip();
+    gossipIntervalRef.current = setInterval(runGossip, 5500);
+    return () => clearInterval(gossipIntervalRef.current);
+  }, [nodes, clusterName]);
 
   const anyJoining = nodes.some(n => n.status === "joining");
 
-  useEffect(() => {
-    if (simulationResult?.replicas) {
-      setConsistencyResult(checkConsistency({ replicas: simulationResult.replicas, consistencyLevel }));
+  const addColumn = () => setColumns(prev => [...prev, { name: "", type: "text", isPartitionKey: false }]);
+  const removeColumn = (i) => setColumns(prev => prev.filter((_, idx) => idx !== i));
+  const updateColumn = (i, field, val) => setColumns(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
+  const togglePartitionKey = (i) => setColumns(prev => prev.map((c, idx) => ({ ...c, isPartitionKey: idx === i ? !c.isPartitionKey : c.isPartitionKey })));
+
+  const handleSetup = async () => {
+    if (!keyspaceName.trim()) { setOutput({ error: "Keyspace name required" }); return; }
+    if (!tableName.trim()) { setOutput({ error: "Table name required" }); return; }
+    if (columns.some(c => !c.name.trim())) { setOutput({ error: "All columns must have a name" }); return; }
+    if (partitionKeys.length === 0) { setOutput({ error: "At least one partition key required" }); return; }
+    try {
+      const colsObj = {};
+      columns.forEach(c => { colsObj[c.name] = c.type; });
+      await createKeyspace(replicationFactor, strategy, keyspaceName, clusterName);
+      await createTable(colsObj, partitionKeys, tableName, keyspaceName, clusterName);
+      setSchemaReady(true);
+      setRowValues({});
+      setOutput({ success: `Keyspace '${keyspaceName}' and table '${tableName}' created.`, columns: columns.map(c => `${c.name} (${c.type})${c.isPartitionKey ? " [PK]" : ""}`).join(", ") });
+    } catch (e) { setOutput({ error: e.message }); }
+  };
+
+  const handleWrite = async () => {
+    if (!schemaReady) { setOutput({ error: "Run Setup first" }); return; }
+    const pkVal = rowValues[primaryPartitionKey];
+    if (!pkVal?.trim()) { setOutput({ error: `Partition key '${primaryPartitionKey}' cannot be empty` }); return; }
+    try {
+      const r = await writeData(rowValues, consistencyLevel, keyspaceName, tableName, clusterName);
+      setOutput(r);
+      addToNodeDataMap(rowValues, nodes, replicationFactor);
+      fetchCluster();
+      const result = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
+      if (result?.hash != null && result.replicas?.length > 0) {
+        const TOTAL_DURATION = 7000;
+        const startTime = performance.now();
+        setWriteFlowAnim({ key: String(pkVal), hash: result.hash, replicas: result.replicas, progress: 0 });
+        const animateFlow = (now) => {
+          const t = Math.min((now - startTime) / TOTAL_DURATION, 1);
+          setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
+          if (t < 1) requestAnimationFrame(animateFlow);
+          else setTimeout(() => setWriteFlowAnim(null), 1000);
+        };
+        requestAnimationFrame(animateFlow);
+      }
+    } catch (e) { setOutput({ error: e.message }); }
+  };
+
+  // ─── Read with CAP error detection ────────────────────────────────
+  const handleRead = useCallback(async (filters = {}) => {
+    try {
+      const r = await readData(filters, consistencyLevel, keyspaceName, tableName, clusterName);
+      setOutput(r);
+    } catch (e) {
+      const msg = e.message ?? "";
+      const isUnavailable = msg.toLowerCase().includes("unavailable")
+        || msg.toLowerCase().includes("nohost")
+        || msg.toLowerCase().includes("no host")
+        || msg.toLowerCase().includes("500")
+        || msg.toLowerCase().includes("503")
+        || msg.toLowerCase().includes("failed")
+        || e.status === 503 || e.status === 500;
+      if (isUnavailable) {
+        // Find which nodes are down and what data they had
+        const deadNodes = nodes.filter(n => n.status === "down" || n.status !== "up");
+        const filterVal = filters[primaryPartitionKey];
+        // Find placement info for the queried key
+        let affectedEntry = null;
+        if (filterVal) {
+          affectedEntry = csvDistribution.find(d => String(d.partitionValue) === String(filterVal));
+          if (!affectedEntry) {
+            const placement = simulatePlacement({ key: String(filterVal), nodes: [...nodes], replicationFactor, hashingType });
+            if (placement) affectedEntry = { partitionValue: filterVal, hash: placement.hash, replicas: placement.replicas, primaryNode: placement.primaryNode?.id };
+          }
+        }
+        setCapError({
+          message: msg,
+          queriedKey: filterVal ?? "(all)",
+          replicationFactor,
+          consistencyLevel,
+          nodes,
+          affectedEntry,
+          deadNodes,
+          nodeDataMap,
+        });
+      } else {
+        setOutput({ error: msg });
+      }
     }
-  }, [consistencyLevel, simulationResult]);
+  }, [consistencyLevel, keyspaceName, tableName, clusterName, nodes, primaryPartitionKey,
+      csvDistribution, replicationFactor, hashingType, nodeDataMap]);
 
   const parseCsvMeta = useCallback((text) => {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -5421,519 +5537,391 @@ export default function App() {
   const onFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0] ?? null;
     setCsvFile(file);
-    setCsvError("");
-    setCsvImportResult(null);
-    setCsvPreviewRows({});
-    setCsvDistribution([]);
+    setCsvError(""); setCsvImportResult(null); setCsvDistribution([]);
     if (!file) return;
-
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (!lines.length) { setCsvError("Fichier CSV vide."); return; }
-
     const firstL = lines[0];
     const delim = firstL.includes(";") && !firstL.includes(",") ? ";" : ",";
     const firstCells = firstL.split(delim).map(c => c.trim());
-
-    // Detect header: all cells must start with a letter or underscore
     const looksLikeHeader = firstCells.every(c => /^[a-zA-Z_][a-zA-Z0-9_ ]*$/.test(c));
-
-    let headers, dataLines;
-    if (looksLikeHeader) {
-      setCsvHasHeader(true);
-      headers = firstCells;
-      dataLines = lines.slice(1);
-    } else {
-      setCsvHasHeader(false);
-      headers = Array.from({ length: firstCells.length }, (_, i) => `col${i + 1}`);
-      dataLines = lines;
-    }
-
+    let headers;
+    if (looksLikeHeader) { setCsvHasHeader(true); headers = firstCells; }
+    else { setCsvHasHeader(false); headers = Array.from({ length: firstCells.length }, (_, i) => `col${i + 1}`); }
     setCsvColumns(headers);
     setPartitionKey(headers[0] ?? "");
-
-    const tableName = file.name.replace(/\.csv$/i, "") || "ImportedTable";
-    const preview = {};
-    for (let i = 0; i < Math.min(dataLines.length, 12); i++) {
-      const parts = dataLines[i].split(delim).map(c => c.trim());
-      if (!parts[0]) continue;
-      const rowId = /^\d+$/.test(parts[0]) ? `row${parts[0]}` : parts[0];
-      const rowObj = {};
-      headers.forEach((h, idx) => {
-        if (parts[idx] !== undefined && parts[idx] !== "") rowObj[h] = parts[idx];
-      });
-      preview[rowId] = rowObj;
-    }
-    if (!Object.keys(preview).length) { setCsvError("Impossible de parser le CSV."); return; }
-    setCsvPreviewRows({ [tableName]: preview });
   }, []);
 
-  // ── onImportCsv — FIXED: try/catch + inline feedback + node status check ──
+  const runCsvInsertLoop = useCallback(async ({ headers, dataLines, delim, pkCol, ksName, tblName }) => {
+    let imported = 0, skipped = 0;
+    const errors = [];
+    setCsvDistribution([]); setNodeDataMap({});
+
+    for (let i = 0; i < dataLines.length; i++) {
+      const line = dataLines[i];
+      if (!line.trim()) continue;
+      const parts = line.split(delim).map(c => c.trim());
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
+      const pval = row[pkCol];
+      if (!pval) { skipped++; continue; }
+      try {
+        await writeData(row, consistencyLevel, ksName, tblName, clusterName);
+        imported++;
+        const placement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
+        if (placement?.hash != null && placement.replicas?.length > 0) {
+          const ANIM_DURATION = 1200;
+          const startTime = performance.now();
+          setWriteFlowAnim({ key: String(pval), hash: placement.hash, replicas: placement.replicas, progress: 0 });
+          await new Promise(res => {
+            const tick = (now) => {
+              const t = Math.min((now - startTime) / ANIM_DURATION, 1);
+              setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
+              if (t < 1) requestAnimationFrame(tick); else res();
+            };
+            requestAnimationFrame(tick);
+          });
+          setWriteFlowAnim(null);
+          setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: placement.hash, replicas: placement.replicas, row }]);
+          addToNodeDataMap(row, nodes, replicationFactor);
+        }
+      } catch (err) {
+        skipped++;
+        errors.push(`row ${i + 1} (${pval}): ${err.message}`);
+      }
+      if (i < dataLines.length - 1) await new Promise(res => setTimeout(res, 100));
+    }
+    return { imported, skipped, errors };
+  }, [consistencyLevel, clusterName, nodes, replicationFactor, hashingType, addToNodeDataMap]);
+
   const onImportCsv = useCallback(async () => {
-    if (!csvFile) { setCsvError("Choisissez un fichier CSV d'abord."); return; }
-    if (!partitionKey) { setCsvError("Choisissez une partition key."); return; }
-    if (nodes.length === 0) { setCsvError("Ajoutez des nœuds au ring d'abord."); return; }
+    if (!csvFile)         { setCsvError("Choose a CSV file first."); return; }
+    if (!partitionKey)    { setCsvError("Choose a partition key."); return; }
+    if (nodes.length === 0) { setCsvError("Add nodes to the ring first."); return; }
     setCsvError("");
-    setCsvImportResult(null);
 
     try {
-      // Check that at least one node is UP with real tokens
-      const upNodes = nodes.filter(n => n.status === "up" && Array.isArray(n.tokens) && n.tokens.length > 0);
-      if (upNodes.length === 0) {
-        setCsvError(
-          nodes.some(n => n.status === "joining")
-            ? "Nœuds en cours de joining — attendez que les tokens soient assignés (⟳)."
-            : "Aucun nœud UP avec des tokens. Vérifiez l'état des nœuds."
-        );
+      const text = await csvFile.text();
+      const meta = parseCsvMeta(text);
+      if (!meta) { setCsvError("CSV empty or unreadable."); return; }
+      const { delim, headers, dataLines } = meta;
+
+      if (schemaReady) {
+        const tableColNames = columns.map(c => c.name);
+        const missing = headers.filter(h => !tableColNames.includes(h));
+        const unknown = tableColNames.filter(c => !headers.includes(c));
+        if (missing.length || unknown.length) {
+          const parts = [];
+          if (missing.length) parts.push(`CSV has unknown columns: ${missing.join(", ")}`);
+          if (unknown.length) parts.push(`Table columns not in CSV: ${unknown.join(", ")}`);
+          setCsvError(parts.join(" · "));
+          return;
+        }
+        const { imported, skipped, errors } = await runCsvInsertLoop({
+          headers, dataLines, delim, pkCol: partitionKey,
+          ksName: keyspaceName, tblName: tableName,
+        });
+        fetchCluster();
+        setCsvImportResult({ real: true, mode: "mapped", rows_imported: imported, rows_skipped: skipped, errors: errors.slice(0, 5), partition_key: partitionKey, columns_detected: headers });
+        setOutput({ real_import: true, mode: "mapped", rows_imported: imported, rows_skipped: skipped });
         return;
       }
 
-      const text = await csvFile.text();
-      const meta = parseCsvMeta(text);
-      if (!meta) { setCsvError("CSV vide ou illisible."); return; }
+      const colsObj = {};
+      headers.forEach(h => { colsObj[h] = "text"; });
+      await createKeyspace(replicationFactor, strategy, keyspaceName, clusterName);
+      await createTable(colsObj, [partitionKey], tableName, keyspaceName, clusterName);
+      setColumns(headers.map((h, i) => ({ name: h, type: "text", isPartitionKey: i === headers.indexOf(partitionKey) })));
+      setSchemaReady(true);
+      setRowValues({});
 
-      const { delim, headers, dataLines } = meta;
-      const dist = [];
-      const newNodeDataMap = { ...nodeDataMap };
-      let skipped = 0;
-
-      dataLines.forEach((line, i) => {
-        if (!line.trim()) return;
-        const parts = line.split(delim).map(c => c.trim());
-        const row = {};
-        headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
-        const pval = row[partitionKey];
-        if (!pval) { skipped++; return; }
-
-        const placement = simulatePlacement({ key: String(pval), nodes, replicationFactor });
-        dist.push({
-          rowId: `row${i + 1}`,
-          partitionValue: pval,
-          hash: placement?.hash,
-          primaryNode: placement?.primaryNode?.id,
-          replicas: placement?.replicas ?? [],
-        });
-
-        const valueStr = JSON.stringify(row);
-        placement?.replicas?.forEach(node => {
-          const existing = newNodeDataMap[node.id] ?? [];
-          const filtered = existing.filter(item => item.key !== String(pval));
-          newNodeDataMap[node.id] = [...filtered, { key: String(pval), value: valueStr }];
-        });
+      const { imported, skipped, errors } = await runCsvInsertLoop({
+        headers, dataLines, delim, pkCol: partitionKey,
+        ksName: keyspaceName, tblName: tableName,
       });
-
-      setNodeDataMap(newNodeDataMap);
-
-      const result = {
-        simulated: true,
-        rows_imported: dist.length,
-        rows_skipped: skipped,
-        nodes_used: upNodes.map(n => n.id),
-        partition_key: partitionKey,
-        columns_detected: headers,
-      };
-      setCsvImportResult(result);
-      setOutput(result);
-      setCsvDistribution(dist);
-
-    } catch (err) {
-      const msg = `Erreur import: ${err.message}`;
-      setCsvError(msg);
-      console.error("Import CSV error:", err);
-    }
-  }, [csvFile, partitionKey, parseCsvMeta, nodes, replicationFactor, nodeDataMap]);
+      fetchCluster();
+      setCsvImportResult({ real: true, mode: "auto", rows_imported: imported, rows_skipped: skipped, errors: errors.slice(0, 5), partition_key: partitionKey, columns_detected: headers });
+      setOutput({ real_import: true, mode: "auto_schema", rows_imported: imported, rows_skipped: skipped, schema_created: `${keyspaceName}.${tableName}` });
+    } catch (err) { setCsvError(`Import error: ${err.message}`); }
+  }, [csvFile, partitionKey, parseCsvMeta, nodes, replicationFactor, hashingType,
+      schemaReady, columns, consistencyLevel, keyspaceName, tableName, strategy, clusterName,
+      runCsvInsertLoop, fetchCluster]);
 
   const sidebarStyle = (open, side) => ({
-    position: "absolute",
-    top: 0,
-    [side]: 0,
-    height: "100%",
-    width: SIDEBAR_W,
-    zIndex: 20,
-    background: "#0a0a14",
-    transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+    position: "absolute", top: 0, [side]: 0, height: "100%", width: SIDEBAR_W, zIndex: 20,
+    background: "#0a0a14", transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
     transform: open ? "translateX(0)" : side === "left" ? `translateX(-100%)` : `translateX(100%)`,
     ...(side === "left" ? { borderRight: BORDER } : { borderLeft: BORDER }),
   });
-
   const sidebarInnerStyle = {
-    width: SIDEBAR_W,
-    height: "100%",
-    overflowX: "hidden",
-    overflowY: "auto",
-    padding: "16px 14px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 0,
-    boxSizing: "border-box",
+    width: SIDEBAR_W, height: "100%", overflowX: "hidden", overflowY: "auto",
+    padding: "16px 14px", display: "flex", flexDirection: "column", gap: 0, boxSizing: "border-box",
   };
 
   return (
-    <div style={{
-      display: "flex", flexDirection: "column",
-      height: "100vh", overflow: "hidden",
-      background: "#0a0a14", color: "#fff",
-      fontFamily: "'JetBrains Mono','Fira Code',monospace",
-    }}>
-      <header style={{
-        height: 48, flexShrink: 0,
-        display: "flex", alignItems: "center", gap: 12, padding: "0 20px",
-        borderBottom: BORDER, background: "rgba(255,255,255,0.02)",
-      }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "#0a0a14", color: "#fff", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
+      <header style={{ height: 48, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", borderBottom: BORDER, background: "rgba(255,255,255,0.02)" }}>
         <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>CassandraEdu</span>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 2 }}>SIMULATOR</span>
-        {anyJoining && (
-          <span style={{ fontSize: 10, color: "#f7c76a", marginLeft: 8, animation: "pulse 1.5s ease-in-out infinite" }}>
-            ⟳ waiting for Cassandra tokens...
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
-          {nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring
+        {anyJoining && <span style={{ fontSize: 10, color: "#f7c76a", marginLeft: 8, animation: "pulse 1.5s ease-in-out infinite" }}>⟳ waiting for Cassandra tokens...</span>}
+        {schemaReady && <span style={{ fontSize: 10, color: "#6af7b8", marginLeft: 8 }}>✓ {keyspaceName}.{tableName}</span>}
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,0.3)", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "rgba(255,255,255,0.15)" }}>cluster</span>
+          <span style={{ color: ACCENT, fontWeight: 700 }}>{clusterName}</span>
         </span>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>{nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring</span>
       </header>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
-
-        {/* LEFT SIDEBAR */}
+        {/* ─── Left sidebar ─────────────────────────────────────────── */}
         <div style={{ position: "relative", flexShrink: 0, width: leftOpen ? SIDEBAR_W : 0, transition: "width 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
           <div style={sidebarStyle(leftOpen, "left")}>
             <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
             <div style={sidebarInnerStyle}>
 
-              {/* ── CSV IMPORT SECTION ── */}
-              <Section title="CSV Import (Simulation)">
+              <Section title="Cluster">
+                <label style={lbl}>Cluster Name</label>
+                <input
+                  style={{ ...inp, borderColor: editableClusterName.trim() !== clusterName ? "rgba(247,198,106,0.6)" : undefined }}
+                  value={editableClusterName}
+                  onChange={e => setEditableClusterName(e.target.value)}
+                  onBlur={e => commitClusterName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.target.blur(); commitClusterName(e.target.value); } }}
+                  placeholder="TestCluster"
+                />
+                {editableClusterName.trim() !== clusterName && (
+                  <div style={{ fontSize: 9, color: "#f7c76a", marginBottom: 6, lineHeight: 1.5 }}>
+                    ↵ Press Enter or click away to apply — will reset session
+                  </div>
+                )}
+                <label style={lbl}>Hashing Type</label>
+                <select style={inp} value={hashingType} onChange={e => setHashingType(e.target.value)}>
+                  <option value="murmur3">Murmur3 (default)</option>
+                  <option value="md5">MD5</option>
+                  <option value="fnv1a">FNV-1a</option>
+                  <option value="xxhash">xxHash</option>
+                </select>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", lineHeight: 1.5, fontStyle: "italic" }}>
+                  Drag the ring to add nodes.
+                </div>
+              </Section>
+
+              <Section title="Setup">
+                <label style={lbl}>Keyspace Name</label>
+                <input style={inp} value={keyspaceName} onChange={e => { setKeyspaceName(e.target.value); setSchemaReady(false); }} placeholder="edu_keyspace" />
+                <label style={lbl}>Strategy</label>
+                <select style={inp} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
+                  <option value="SimpleStrategy">SimpleStrategy</option>
+                  <option value="NetworkTopologyStrategy">NetworkTopologyStrategy</option>
+                </select>
                 <label style={lbl}>Replication Factor</label>
-                <select style={inp} value={replicationFactor} onChange={e => setReplicationFactor(Number(e.target.value))}>
+                <select style={inp} value={replicationFactor} onChange={e => { setReplicationFactor(Number(e.target.value)); setSchemaReady(false); }}>
                   <option value={1}>RF = 1</option>
                   <option value={2}>RF = 2</option>
                   <option value={3}>RF = 3</option>
                 </select>
-
-                <label style={{ ...lbl, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                  <input type="checkbox" checked={csvHasHeader}
-                    onChange={e => { setCsvHasHeader(e.target.checked); setCsvPreviewRows({}); setCsvColumns([]); }} />
-                  Has header row
-                </label>
-
-                {!csvHasHeader && (
-                  <input
-                    style={inp}
-                    placeholder="ex: id;nom;prenom;statut"
-                    value={csvColumnNames}
-                    onChange={e => { setCsvColumnNames(e.target.value); setCsvPreviewRows({}); }}
-                  />
-                )}
-
-                <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
-
-                {/* Detected columns info */}
-                {csvColumns.length > 0 && (
-                  <div style={{
-                    background: "rgba(32,178,170,0.05)",
-                    border: "1px solid rgba(32,178,170,0.15)",
-                    borderRadius: 5,
-                    padding: "6px 8px",
-                    marginBottom: 6,
-                    fontSize: 9,
-                    color: "rgba(255,255,255,0.5)",
-                    lineHeight: 1.7,
-                  }}>
-                    <span style={{ color: ACCENT, fontWeight: 700 }}>Colonnes détectées:</span><br />
-                    {csvColumns.map((c, i) => (
-                      <span key={c}>
-                        <span style={{ color: "rgba(255,255,255,0.3)" }}>{i + 1}.</span>{" "}
-                        <span style={{ color: "rgba(255,255,255,0.7)" }}>{c}</span>
-                        {i < csvColumns.length - 1 ? "  " : ""}
-                      </span>
-                    ))}
-                    <br />
-                    <span style={{ color: "rgba(255,255,255,0.3)" }}>
-                      Séparateur: {csvColumns.length > 1 ? "auto-détecté" : "?"}
-                    </span>
+                <label style={lbl}>Table Name</label>
+                <input style={inp} value={tableName} onChange={e => { setTableName(e.target.value); setSchemaReady(false); }} placeholder="edu_table" />
+                <label style={lbl}>Columns</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+                  {columns.map((col, i) => (
+                    <div key={i} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <input
+                        style={{ flex: 2, boxSizing: "border-box", fontSize: 10, padding: "3px 6px" }}
+                        placeholder="col name" value={col.name}
+                        onChange={e => { updateColumn(i, "name", e.target.value); setSchemaReady(false); }}
+                      />
+                      <select
+                        style={{ flex: 1.5, fontSize: 10, padding: "3px 2px" }}
+                        value={col.type}
+                        onChange={e => { updateColumn(i, "type", e.target.value); setSchemaReady(false); }}
+                      >
+                        {COLUMN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <button
+                        title={col.isPartitionKey ? "Remove partition key" : "Set as partition key"}
+                        onClick={() => { togglePartitionKey(i); setSchemaReady(false); }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = col.isPartitionKey ? "rgba(32,178,170,0.5)" : "rgba(32,178,170,0.15)";
+                          e.currentTarget.style.color = ACCENT;
+                          e.currentTarget.style.borderColor = ACCENT;
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = col.isPartitionKey ? "rgba(32,178,170,0.3)" : "rgba(255,255,255,0.05)";
+                          e.currentTarget.style.color = col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.3)";
+                          e.currentTarget.style.borderColor = col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.07)";
+                        }}
+                        style={{ width: 22, height: 22, flexShrink: 0, padding: 0, fontSize: 9, cursor: "pointer", background: col.isPartitionKey ? "rgba(32,178,170,0.3)" : "rgba(255,255,255,0.05)", border: col.isPartitionKey ? `1px solid ${ACCENT}` : BORDER, color: col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.3)", borderRadius: 4, lineHeight: 1, transition: "background 0.15s, color 0.15s, border-color 0.15s" }}>PK</button>
+                      {columns.length > 1 && (
+                        <button
+                          title="Remove column"
+                          onClick={() => { removeColumn(i); setSchemaReady(false); }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.background = "rgba(247,106,106,0.3)";
+                            e.currentTarget.style.borderColor = "#f76a6a";
+                            e.currentTarget.style.transform = "scale(1.15)";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = "rgba(247,106,106,0.1)";
+                            e.currentTarget.style.borderColor = "rgba(247,106,106,0.3)";
+                            e.currentTarget.style.transform = "scale(1)";
+                          }}
+                          style={{ width: 18, height: 18, flexShrink: 0, padding: 0, fontSize: 11, cursor: "pointer", background: "rgba(247,106,106,0.1)", border: "1px solid rgba(247,106,106,0.3)", color: "#f76a6a", borderRadius: 4, lineHeight: 1, transition: "background 0.15s, border-color 0.15s, transform 0.1s" }}>×</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => { addColumn(); setSchemaReady(false); }} style={{ ...btn, fontSize: 10, opacity: 0.7 }}>+ Add Column</button>
+                {partitionKeys.length > 0 && (
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>
+                    PK: <span style={{ color: ACCENT }}>{partitionKeys.join(", ")}</span>
                   </div>
                 )}
+                <button
+                  style={{ ...btn, background: "rgba(32,178,170,0.15)", border: `1px solid ${ACCENT}`, color: ACCENT, fontWeight: 700, transition: "background 0.15s, box-shadow 0.15s, transform 0.1s" }}
+                  onClick={handleSetup}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = "rgba(32,178,170,0.3)";
+                    e.currentTarget.style.boxShadow = "0 0 10px rgba(32,178,170,0.25)";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = "rgba(32,178,170,0.15)";
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                  title={`Creates keyspace '${keyspaceName}' (${strategy}, RF=${replicationFactor}), then table '${tableName}'`}
+                >⚙ Apply Schema</button>
+                {schemaReady && (
+                  <div style={{ fontSize: 9, color: "#6af7b8", marginTop: 2, marginBottom: 4, textAlign: "center" }}>✓ Schema ready</div>
+                )}
+              </Section>
 
-                {csvColumns.length > 0 && (
+              <Section title="Data Entry">
+                {!schemaReady && (
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 8, fontStyle: "italic" }}>Complete Setup first.</div>
+                )}
+                <Tabs
+                  tabs={[{ id: "manual", label: "Manual" }, { id: "csv", label: "CSV Import" }]}
+                  active={dataTab}
+                  onChange={setDataTab}
+                />
+
+                {dataTab === "manual" && (
                   <>
-                    <label style={lbl}>Partition Key (colonne à hasher)</label>
-                    <select style={inp} value={partitionKey} onChange={e => setPartitionKey(e.target.value)}>
-                      {csvColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                    <label style={lbl}>Consistency Level</label>
+                    <select style={inp} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
+                      <option value="ONE">ONE</option>
+                      <option value="QUORUM">QUORUM</option>
+                      <option value="ALL">ALL</option>
                     </select>
+                    <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 2 }}>WRITE</div>
+                    {schemaReady ? (
+                      columns.map(col => (
+                        <div key={col.name}>
+                          <label style={{ ...lbl, color: col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.4)" }}>
+                            {col.name} <span style={{ fontSize: 9, opacity: 0.6 }}>({col.type}){col.isPartitionKey ? " [PK]" : ""}</span>
+                          </label>
+                          <input
+                            style={inp} placeholder={`${col.name}...`}
+                            value={rowValues[col.name] ?? ""}
+                            onChange={e => setRowValues(prev => ({ ...prev, [col.name]: e.target.value }))}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginBottom: 8, fontStyle: "italic" }}>No schema yet.</div>
+                    )}
+                    <button style={{ ...btn, opacity: schemaReady ? 1 : 0.4 }} onClick={handleWrite}>Write to Cassandra</button>
+                    <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 8 }}>READ</div>
+                    <label style={lbl}>Filter by partition key</label>
+                    <input
+                      style={inp} placeholder={primaryPartitionKey || "partition key value"}
+                      value={filterKey} onChange={e => setFilterKey(e.target.value)}
+                    />
+                    <button style={btn} onClick={() => {
+                      const filters = filterKey.trim() && primaryPartitionKey ? { [primaryPartitionKey]: filterKey.trim() } : {};
+                      handleRead(filters);
+                    }}>Read from Cassandra</button>
+                    <button style={{ ...btn, opacity: 0.7 }} onClick={() => handleRead({})}>Read All</button>
+                    {filterKey && primaryPartitionKey && (
+                      <>
+                        <button style={btn} onClick={() =>
+                          getEndpoints(filterKey, keyspaceName, tableName, clusterName).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
+                        }>Get Endpoints for key</button>
+                        <button style={btn} onClick={() =>
+                          explainPartition(filterKey, keyspaceName, tableName, clusterName).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
+                        }>Explain Partition</button>
+                      </>
+                    )}
                   </>
                 )}
 
-                <button
-                  style={{
-                    ...btn,
-                    background: csvFile && partitionKey && nodes.length > 0
-                      ? "rgba(32,178,170,0.15)"
-                      : "rgba(255,255,255,0.03)",
-                    border: csvFile && partitionKey && nodes.length > 0
-                      ? `1px solid ${ACCENT}`
-                      : BORDER,
-                    color: csvFile && partitionKey && nodes.length > 0 ? ACCENT : "rgba(255,255,255,0.3)",
-                    fontWeight: 700,
-                  }}
-                  onClick={onImportCsv}
-                >
-                  Import CSV
-                </button>
-
-                {/* Error */}
-                {csvError && (
-                  <div style={{
-                    background: "rgba(247,106,106,0.08)",
-                    border: "1px solid rgba(247,106,106,0.3)",
-                    borderRadius: 5,
-                    padding: "6px 8px",
-                    fontSize: 10,
-                    color: "#f76a6a",
-                    whiteSpace: "pre-wrap",
-                    marginBottom: 4,
-                  }}>
-                    ⚠ {csvError}
-                  </div>
-                )}
-
-                {/* Inline success result */}
-                {csvImportResult?.simulated && (
-                  <div style={{
-                    background: "rgba(32,178,170,0.08)",
-                    border: "1px solid rgba(32,178,170,0.3)",
-                    borderRadius: 6,
-                    padding: "8px 10px",
-                    fontSize: 10,
-                    lineHeight: 1.8,
-                  }}>
-                    <div style={{ color: ACCENT, fontWeight: 700, marginBottom: 4 }}>✓ Import simulé</div>
-                    <div>
-                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Lignes importées: </span>
-                      <strong style={{ color: "#6af7b8" }}>{csvImportResult.rows_imported}</strong>
+                {dataTab === "csv" && (
+                  <>
+                    <div style={{ fontSize: 9, marginBottom: 8, padding: "4px 8px", borderRadius: 4,
+                      background: schemaReady ? "rgba(106,247,184,0.07)" : "rgba(247,198,106,0.07)",
+                      border: schemaReady ? "1px solid rgba(106,247,184,0.2)" : "1px solid rgba(247,198,106,0.2)",
+                      color: schemaReady ? "#6af7b8" : "#f7c76a", lineHeight: 1.6 }}>
+                      {schemaReady
+                        ? `Mode B — inserting into ${keyspaceName}.${tableName} · CSV headers must match table columns exactly`
+                        : `Mode A — CSV headers will auto-create keyspace & table (all columns as text)`}
                     </div>
-                    {csvImportResult.rows_skipped > 0 && (
-                      <div>
-                        <span style={{ color: "rgba(255,255,255,0.4)" }}>Lignes ignorées: </span>
-                        <strong style={{ color: "#f7c76a" }}>{csvImportResult.rows_skipped}</strong>
+                    <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
+                    {csvColumns.length > 0 && (
+                      <div style={{ background: "rgba(32,178,170,0.05)", border: "1px solid rgba(32,178,170,0.15)", borderRadius: 5, padding: "6px 8px", marginBottom: 6, fontSize: 9, color: "rgba(255,255,255,0.5)", lineHeight: 1.7 }}>
+                        <span style={{ color: ACCENT, fontWeight: 700 }}>Columns:</span><br />
+                        {csvColumns.map((c, i) => {
+                          const mismatch = schemaReady && !columns.map(col => col.name).includes(c);
+                          return (
+                            <span key={c}>
+                              <span style={{ color: "rgba(255,255,255,0.3)" }}>{i + 1}.</span>{" "}
+                              <span style={{ color: mismatch ? "#f76a6a" : "rgba(255,255,255,0.7)" }}>{c}{mismatch ? " ✗" : ""}</span>
+                              {i < csvColumns.length - 1 ? "  " : ""}
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
-                    <div>
-                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Partition key: </span>
-                      <strong>{csvImportResult.partition_key}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Nœuds: </span>
-                      <strong>{csvImportResult.nodes_used?.join(", ")}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: "rgba(255,255,255,0.4)" }}>Colonnes: </span>
-                      <span style={{ fontSize: 9 }}>{csvImportResult.columns_detected?.join(", ")}</span>
-                    </div>
-                  </div>
-                )}
-              </Section>
-
-              {/* ── WRITE / READ SECTION ── */}
-              <Section title="Write / Read">
-                <label style={lbl}>Key</label>
-                <input style={inp} placeholder="e.g. user_id" value={key} onChange={e => setKey(e.target.value)} />
-                <label style={lbl}>Value</label>
-                <input style={inp} placeholder="e.g. Alice" value={value} onChange={e => setValue(e.target.value)} />
-                <button style={btn} onClick={async () => {
-                  if (!key.trim()) { setOutput({ error: "Key cannot be empty" }); return; }
-                  try {
-                    await createKeyspace(replicationFactor);
-                    await createTable({ [key]: "text", value: "text" }, [key]);
-                    const r = await writeData({ [key]: value }, consistencyLevel);
-                    setOutput(r);
-                    addToNodeDataMap(key, value, nodes, replicationFactor);
-                    fetchCluster();
-                  } catch (e) { setOutput({ error: e.message }); }
-                }}>Write to Cassandra</button>
-                <button style={btn} onClick={() =>
-                  readData({ [key]: value }, consistencyLevel)
-                    .then(r => setOutput(r))
-                    .catch(e => setOutput({ error: e.message }))
-                }>Read from Cassandra</button>
-                <button style={{ ...btn, opacity: 0.7 }} onClick={() =>
-                  readData({}, "ONE")
-                    .then(r => setOutput(r))
-                    .catch(e => setOutput({ error: e.message }))
-                }>Read All</button>
-              </Section>
-
-            </div>
-          </div>
-        </div>
-
-        {/* CENTER */}
-        <main style={{
-          flex: 1, overflow: "auto",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "24px 20px", gap: 16,
-          minWidth: 0,
-        }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
-            <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
-            <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
-            <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
-          </div>
-
-          <div style={{ width: "100%", maxWidth: 900 }}>
-            <TokenRing
-              nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
-              nodeDataMap={nodeDataMap}
-              onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
-              simulationResult={simulationResult} csvDistribution={csvDistribution}
-              disabled={anyJoining}
-            />
-          </div>
-
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Output</div>
-              {output
-                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                    {JSON.stringify(output, null, 2)}
-                  </div>
-                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
-            </div>
-
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Settings</div>
-              <label style={lbl}>Consistency Level</label>
-              <select style={inp} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
-                <option value="ONE">ONE</option>
-                <option value="QUORUM">QUORUM</option>
-                <option value="ALL">ALL</option>
-              </select>
-              <button
-                style={{ ...btn, marginTop: 4, background: "rgba(32,178,170,0.12)", border: `1px solid ${ACCENT}`, color: ACCENT, marginBottom: 0 }}
-                onClick={runSimulation} disabled={!key || nodes.length === 0}>
-                ▶ Simulate Write
-              </button>
-            </div>
-          </div>
-
-          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ ...card, flex: 1, minWidth: 180, marginBottom: 0 }}>
-              <div style={h3}>Node Failure Sim</div>
-              {nodes.length === 0
-                ? <p style={{ opacity: 0.35, fontSize: 11 }}>Add nodes via the ring first.</p>
-                : nodes.map(node => (
-                  <button key={node.id}
-                    style={{
-                      ...btn,
-                      background: node.status === "down" ? "#8b2020" : undefined,
-                      color: node.status === "down" ? "#fff" : undefined,
-                      border: node.status === "down" ? "1px solid #b33030" : undefined,
-                      fontWeight: node.status === "down" ? 700 : undefined,
-                    }}
-                    onClick={() => toggleNodeStatus(node.id)}>
-                    {node.status === "up" ? "⬇ Disable" : "⬆ Enable"} {node.id}
-                  </button>
-                ))}
-            </div>
-
-            {replicatedNodes.length > 0 && (
-              <div style={{ ...card, flex: 1, minWidth: 200, marginBottom: 0 }}>
-                <div style={h3}>Distribution / Node</div>
-                {replicatedNodes.map(n => {
-                  const count = replicatedCounts[n] ?? 0;
-                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
-                  return (
-                    <div key={n} style={{ display: "grid", gridTemplateColumns: "68px 1fr 30px", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 10 }}>{n}</div>
-                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, background: ACCENT, height: 10, transition: "width .4s" }} />
+                    {csvColumns.length > 0 && (
+                      <>
+                        <label style={lbl}>Partition Key</label>
+                        <select style={inp} value={partitionKey} onChange={e => setPartitionKey(e.target.value)}>
+                          {csvColumns.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </>
+                    )}
+                    <button
+                      style={{
+                        ...btn,
+                        background: csvFile && partitionKey && nodes.length > 0 ? "rgba(32,178,170,0.15)" : "rgba(255,255,255,0.03)",
+                        border: csvFile && partitionKey && nodes.length > 0 ? `1px solid ${ACCENT}` : BORDER,
+                        color: csvFile && partitionKey && nodes.length > 0 ? ACCENT : "rgba(255,255,255,0.3)",
+                        fontWeight: 700,
+                      }}
+                      onClick={onImportCsv}
+                    >{schemaReady ? "Import CSV" : "Import & Auto-Create Schema"}</button>
+                    {csvError && (
+                      <div style={{ background: "rgba(247,106,106,0.08)", border: "1px solid rgba(247,106,106,0.3)", borderRadius: 5, padding: "6px 8px", fontSize: 10, color: "#f76a6a", marginBottom: 4 }}>⚠ {csvError}</div>
+                    )}
+                    {csvImportResult?.real && (
+                      <div style={{ background: "rgba(32,178,170,0.08)", border: "1px solid rgba(32,178,170,0.3)", borderRadius: 6, padding: "8px 10px", fontSize: 10, lineHeight: 1.8 }}>
+                        <div style={{ color: ACCENT, fontWeight: 700, marginBottom: 4 }}>
+                          {csvImportResult.mode === "auto" ? "✓ Auto-schema + import" : "✓ Import Cassandra"}
+                        </div>
+                        <div><span style={{ color: "rgba(255,255,255,0.4)" }}>Inserted: </span><strong style={{ color: "#6af7b8" }}>{csvImportResult.rows_imported}</strong></div>
+                        {csvImportResult.rows_skipped > 0 && (
+                          <div><span style={{ color: "rgba(255,255,255,0.4)" }}>Skipped: </span><strong style={{ color: "#f7c76a" }}>{csvImportResult.rows_skipped}</strong></div>
+                        )}
+                        {csvImportResult.errors?.length > 0 && (
+                          <div style={{ color: "#f76a6a", fontSize: 9, marginTop: 4 }}>
+                            {csvImportResult.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+                          </div>
+                        )}
+                        <div><span style={{ color: "rgba(255,255,255,0.4)" }}>PK: </span><strong>{csvImportResult.partition_key}</strong></div>
                       </div>
-                      <div style={{ textAlign: "right", fontSize: 10 }}>{count}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
-              <div style={h3}>Simulation Result</div>
-              {simulationResult ? (
-                <div style={{ fontSize: 11, lineHeight: 1.9 }}>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Key: </span>{simulationResult.key}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Hash: </span>{String(simulationResult.hash)}</div>
-                  <div><span style={{ color: "rgba(255,255,255,0.35)" }}>Primary: </span>{simulationResult.primaryNode?.id ?? "—"}</div>
-                  {simulationResult.replicas.map((n, i) => (
-                    <div key={n.id} style={{ color: ACCENT }}>{i === 0 ? "★ Primary" : `  Replica ${i}`}: {n.id}</div>
-                  ))}
-                  {consistencyResult && (
-                    <div style={{
-                      marginTop: 8, padding: "6px 8px", borderRadius: 6,
-                      background: consistencyResult.success ? "rgba(106,247,184,0.07)" : "rgba(247,106,106,0.07)",
-                      border: `1px solid ${consistencyResult.success ? "#6af7b8" : "#f76a6a"}44`
-                    }}>
-                      <div style={{ color: consistencyResult.success ? "#6af7b8" : "#f76a6a", fontWeight: 700 }}>
-                        {consistencyResult.success ? "✓ WRITE SUCCESS" : "✗ WRITE FAILED"}
-                      </div>
-                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>
-                        {consistencyResult.consistencyLevel} · needs {consistencyResult.required} · alive {consistencyResult.aliveReplicas}/{consistencyResult.required}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p style={{ opacity: 0.3, fontSize: 11 }}>
-                  {nodes.length === 0 ? "Add nodes first." : "Enter a key and simulate."}
-                </p>
-              )}
-            </div>
-          </div>
-        </main>
-
-        {/* RIGHT SIDEBAR */}
-        <div style={{ position: "relative", flexShrink: 0, width: rightOpen ? SIDEBAR_W : 0, transition: "width 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
-          <div style={sidebarStyle(rightOpen, "right")}>
-            <CollapseBtn open={rightOpen} onClick={() => setRightOpen(o => !o)} side="right" />
-            <div style={sidebarInnerStyle}>
-
-              <Section title="Cluster">
-                <button style={btn} onClick={() =>
-                  getCluster()
-                    .then(arr => {
-                      setOutput(arr);
-                      if (Array.isArray(arr)) {
-                        const dict = {};
-                        arr.forEach(n => { dict[n.name] = n; });
-                        setClusterData(dict);
-                      }
-                    })
-                    .catch(e => setOutput({ error: e.message }))
-                }>Show Cluster</button>
-
-                <button style={btn} onClick={() =>
-                  getClusterStatus()
-                    .then(setClusterStatus)
-                    .catch(e => setClusterStatus({ error: e.message }))
-                }>Cluster Status</button>
-                {clusterStatus && (
-                  <pre style={{ fontSize: 9, maxHeight: 100, overflow: "auto", marginBottom: 8 }}>
-                    {JSON.stringify(clusterStatus, null, 2)}
-                  </pre>
-                )}
-              </Section>
-
-              <Section title="Token Ring">
-                <button style={btn} onClick={() =>
-                  getTokenRing().then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                }>Get Token Ring</button>
-                <button style={btn} onClick={() =>
-                  getDistribution().then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                }>Get Distribution</button>
-                {key && (
-                  <>
-                    <button style={btn} onClick={() =>
-                      getEndpoints(key).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                    }>Get Endpoints for key</button>
-                    <button style={btn} onClick={() =>
-                      explainPartition(key).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                    }>Explain Partition</button>
+                    )}
                   </>
                 )}
               </Section>
@@ -5942,17 +5930,13 @@ export default function App() {
                 <button
                   style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a", ...btn }}
                   onClick={() => {
-                    deleteCluster()
-                      .then(() => {
-                        setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
-                        usedNamesRef.current.clear();
-                        setOutput(null); setClusterStatus(null);
-                        setSimulationResult(null); setConsistencyResult(null);
-                        setCsvFile(null); setCsvPreviewRows({}); setCsvColumns([]);
-                        setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
-                        setKey(""); setValue("");
-                      })
-                      .catch(e => setOutput({ error: e.message }));
+                    deleteCluster(clusterName).then(() => {
+                      clusterInitializedRef.current = false;
+                      setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
+                      usedNamesRef.current.clear(); setOutput(null);
+                      setCsvFile(null); setCsvColumns([]); setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
+                      setRowValues({}); setSchemaReady(false); prevGossipRef.current = {};
+                    }).catch(e => setOutput({ error: e.message }));
                   }}
                 >Delete Cluster</button>
               </Section>
@@ -5961,7 +5945,65 @@ export default function App() {
           </div>
         </div>
 
+        {/* ─── Main canvas ──────────────────────────────────────────── */}
+        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 20px", gap: 16, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
+            <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
+            <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
+            <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
+          </div>
+
+          {replicatedNodes.length > 0 && (
+            <div style={{ ...card, width: "100%", maxWidth: 900, marginBottom: 0 }}>
+              <div style={h3}>Distribution / Node</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {replicatedNodes.map(n => {
+                  const count = replicatedCounts[n] ?? 0;
+                  const pct = maxReplicated > 0 ? Math.round((count / maxReplicated) * 100) : 0;
+                  return (
+                    <div key={n} style={{ flex: 1, minWidth: 100 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: 10, color: ACCENT }}>{n}</span>
+                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{count}</span>
+                      </div>
+                      <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, background: ACCENT, height: 8, transition: "width .4s", borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ width: "100%", maxWidth: 900 }}>
+            <TokenRing
+              nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
+              nodeDataMap={nodeDataMap} onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
+              csvDistribution={csvDistribution} disabled={anyJoining}
+              writeFlowAnim={writeFlowAnim} gossipAnim={gossipAnim}
+              hashingType={hashingType}
+            />
+          </div>
+
+          <div style={{ width: "100%", display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ ...card, flex: 1, minWidth: 190, marginBottom: 0 }}>
+              <div style={h3}>Output</div>
+              {output
+                ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify(output, null, 2)}</div>
+                : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
+            </div>
+          </div>
+        </main>
       </div>
+
+      {/* ─── CAP Error Modal ──────────────────────────────────────── */}
+      {capError && (
+        <CAPErrorModal
+          error={capError}
+          onClose={() => setCapError(null)}
+        />
+      )}
     </div>
   );
 }
@@ -5969,13 +6011,9 @@ export default function App() {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 6 }}>
-      <div style={{
-        fontSize: 10, letterSpacing: 2, textTransform: "uppercase",
-        color: ACCENT, fontWeight: 700,
-        padding: "10px 2px 8px",
-        borderBottom: "1px solid rgba(32,178,170,0.15)",
-        marginBottom: 10,
-      }}>{title}</div>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, padding: "10px 2px 8px", borderBottom: "1px solid rgba(32,178,170,0.15)", marginBottom: 10 }}>
+        {title}
+      </div>
       {children}
     </div>
   );
@@ -6128,39 +6166,561 @@ FICHIER: src\assets\vite.svg
 
 
 ================================================================================
+FICHIER: src\components\CAPErrorModal.jsx
+================================================================================
+
+import { useEffect, useRef, useState } from "react";
+
+// ── CAP Triangle SVG ──────────────────────────────────────────────────────────
+function CAPTriangle({ highlighted }) {
+  const pts = {
+    C: { x: 150, y: 20 },
+    A: { x: 30,  y: 200 },
+    P: { x: 270, y: 200 },
+  };
+  const colors = {
+    C: highlighted === "C" ? "#f76a6a" : "rgba(255,255,255,0.15)",
+    A: highlighted === "A" ? "#6af7b8" : "rgba(255,255,255,0.15)",
+    P: highlighted === "P" ? "#facc15" : "rgba(255,255,255,0.15)",
+  };
+  const edgeColor = (a, b) =>
+    highlighted === a || highlighted === b ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.06)";
+
+  return (
+    <svg viewBox="0 0 300 230" style={{ width: 200, height: 150, flexShrink: 0 }}>
+      <line x1={pts.C.x} y1={pts.C.y} x2={pts.A.x} y2={pts.A.y} stroke={edgeColor("C","A")} strokeWidth={1.5} />
+      <line x1={pts.C.x} y1={pts.C.y} x2={pts.P.x} y2={pts.P.y} stroke={edgeColor("C","P")} strokeWidth={1.5} />
+      <line x1={pts.A.x} y1={pts.A.y} x2={pts.P.x} y2={pts.P.y}
+        stroke={edgeColor("A","P")} strokeWidth={2.5}
+        strokeDasharray={highlighted === "C" ? "0" : "5 3"} />
+      {highlighted === "C" && (
+        <polygon
+          points={`${pts.C.x},${pts.C.y} ${pts.A.x},${pts.A.y} ${pts.P.x},${pts.P.y}`}
+          fill="rgba(247,106,106,0.04)" stroke="none" />
+      )}
+      {Object.entries(pts).map(([key, pos]) => (
+        <g key={key}>
+          <circle cx={pos.x} cy={pos.y} r={22}
+            fill={highlighted === key ? `${colors[key]}22` : "rgba(255,255,255,0.03)"}
+            stroke={colors[key]} strokeWidth={highlighted === key ? 2 : 1} />
+          <text x={pos.x} y={pos.y - 2} textAnchor="middle" dominantBaseline="middle"
+            fontSize={11} fontWeight="800" fill={colors[key]}
+            fontFamily="'JetBrains Mono', monospace">{key}</text>
+          <text x={pos.x} y={pos.y + 10} textAnchor="middle" dominantBaseline="middle"
+            fontSize={6.5} fill={`${colors[key]}99`}
+            fontFamily="'JetBrains Mono', monospace">
+            {key === "C" ? "Consistency" : key === "A" ? "Availability" : "Partition"}
+          </text>
+        </g>
+      ))}
+      {highlighted === "C" && (
+        <g>
+          <line x1={pts.C.x-10} y1={pts.C.y-10} x2={pts.C.x+10} y2={pts.C.y+10} stroke="#f76a6a" strokeWidth={2.5} />
+          <line x1={pts.C.x+10} y1={pts.C.y-10} x2={pts.C.x-10} y2={pts.C.y+10} stroke="#f76a6a" strokeWidth={2.5} />
+        </g>
+      )}
+      <text x={150} y={215} textAnchor="middle" fontSize={8}
+        fill="rgba(255,255,255,0.2)" fontFamily="'JetBrains Mono', monospace">
+        Cassandra guarantees AP
+      </text>
+    </svg>
+  );
+}
+
+// ── Animated ring mini-view ────────────────────────────────────────────────────
+function MiniRing({ deadNodeIds = [], affectedKey, nodeColors = {}, allNodes = [] }) {
+  const W = 200, H = 200, CX = 100, CY = 100, R = 70;
+  const positions = allNodes.map((n, i) => {
+    const angle = (2 * Math.PI * i) / allNodes.length - Math.PI / 2;
+    return {
+      ...n,
+      x: CX + R * Math.cos(angle),
+      y: CY + R * Math.sin(angle),
+      color: nodeColors[n.id] ?? "#20B2AA",
+      dead: deadNodeIds.includes(n.id),
+    };
+  });
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: 140, height: 140, flexShrink: 0 }}>
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={1.5} />
+      {positions.map(n => (
+        <g key={n.id}>
+          <circle cx={n.x} cy={n.y} r={18}
+            fill={n.dead ? "rgba(247,106,106,0.08)" : `${n.color}18`}
+            stroke={n.dead ? "#f76a6a" : n.color}
+            strokeWidth={n.dead ? 2 : 1.5}
+            strokeDasharray={n.dead ? "4 2" : "0"} />
+          <text x={n.x} y={n.y - 1} textAnchor="middle" dominantBaseline="middle"
+            fontSize={9} fontWeight="800"
+            fill={n.dead ? "#f76a6a" : n.color}
+            fontFamily="'JetBrains Mono', monospace">
+            {n.id.replace("Node", "")}
+          </text>
+          {n.dead && (
+            <>
+              <line x1={n.x-6} y1={n.y-6} x2={n.x+6} y2={n.y+6} stroke="#f76a6a" strokeWidth={2} />
+              <line x1={n.x+6} y1={n.y-6} x2={n.x-6} y2={n.y+6} stroke="#f76a6a" strokeWidth={2} />
+            </>
+          )}
+        </g>
+      ))}
+      <text x={CX} y={CY - 5} textAnchor="middle" fontSize={7}
+        fill="rgba(255,255,255,0.2)" fontFamily="'JetBrains Mono', monospace">
+        key="{affectedKey}"
+      </text>
+      <text x={CX} y={CY + 7} textAnchor="middle" fontSize={6}
+        fill="#f76a6a" fontFamily="'JetBrains Mono', monospace">
+        inaccessible
+      </text>
+    </svg>
+  );
+}
+
+// ── Consistency level explainer ───────────────────────────────────────────────
+function ConsistencyExplainer({ consistencyLevel, replicationFactor, nodes }) {
+  const upNodes = nodes.filter(n => n.status === "up").length;
+  const totalNodes = nodes.length;
+
+  const needed = {
+    ONE: 1,
+    QUORUM: Math.floor(replicationFactor / 2) + 1,
+    ALL: replicationFactor,
+  }[consistencyLevel] ?? 1;
+
+  const canAchieve = upNodes >= needed;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", lineHeight: 1.7 }}>
+        With <strong style={{ color: "#facc15" }}>Consistency Level = {consistencyLevel}</strong>,
+        Cassandra must receive a response from at least{" "}
+        <strong style={{ color: "#fff" }}>{needed} node{needed > 1 ? "s" : ""}</strong> (out of RF={replicationFactor}).
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+        {["ONE", "QUORUM", "ALL"].map(cl => {
+          const req = { ONE: 1, QUORUM: Math.floor(replicationFactor / 2) + 1, ALL: replicationFactor }[cl];
+          const ok = upNodes >= req;
+          const active = cl === consistencyLevel;
+          return (
+            <div key={cl} style={{
+              padding: "8px 10px", borderRadius: 7, textAlign: "center",
+              background: active ? (ok ? "rgba(106,247,184,0.08)" : "rgba(247,106,106,0.08)") : "rgba(255,255,255,0.03)",
+              border: `1px solid ${active ? (ok ? "#6af7b8" : "#f76a6a") : "rgba(255,255,255,0.07)"}`,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: active ? (ok ? "#6af7b8" : "#f76a6a") : "rgba(255,255,255,0.3)" }}>{cl}</div>
+              <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", marginTop: 3 }}>
+                {req} node{req > 1 ? "s" : ""} required
+              </div>
+              <div style={{ fontSize: 9, marginTop: 4, color: ok ? "#6af7b8" : "#f76a6a" }}>
+                {ok ? "✓ achievable" : "✗ not achievable"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{
+        padding: "8px 12px", borderRadius: 6,
+        background: "rgba(106,247,184,0.05)", border: "1px solid rgba(106,247,184,0.15)",
+        fontSize: 9, color: "rgba(255,255,255,0.5)", lineHeight: 1.7,
+      }}>
+        💡 Fix: switch to <strong style={{ color: "#6af7b8" }}>ONE</strong> to read even with {upNodes}/{totalNodes} nodes UP,
+        or add more nodes and increase RF.
+      </div>
+    </div>
+  );
+}
+
+// ── Main Modal ────────────────────────────────────────────────────────────────
+export default function CAPErrorModal({ error, onClose, onRetry }) {
+  const [phase, setPhase] = useState(0);
+  const [pulse, setPulse] = useState(true);
+
+  useEffect(() => {
+    const t = setInterval(() => setPulse(p => !p), 800);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!error) return null;
+
+  const {
+    message = "",
+    queriedKey = "",
+    replicationFactor = 1,
+    consistencyLevel = "QUORUM",
+    nodes = [],
+    affectedEntry = null,
+    deadNodes = [],
+    nodeColors = {},
+  } = error;
+
+  // Detect error type
+  const isConsistencyError = message.toLowerCase().includes("consistency") ||
+    message.toLowerCase().includes("consistency level") ||
+    message.toLowerCase().includes("not achievable");
+  const isUnavailableError = message.toLowerCase().includes("unavailable") ||
+    message.toLowerCase().includes("nohost") ||
+    message.toLowerCase().includes("no host") ||
+    message.toLowerCase().includes("500");
+
+  const deadNodeIds = deadNodes.map(n => n.id);
+  const affectedReplicas = affectedEntry?.replicas ?? [];
+  const primaryNodeId = affectedEntry?.primaryNode ?? affectedReplicas[0]?.id ?? null;
+
+  const ACCENT = "#20B2AA";
+
+  const overlay = {
+    position: "fixed", inset: 0, zIndex: 200,
+    background: "rgba(0,0,0,0.92)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    backdropFilter: "blur(6px)",
+    fontFamily: "'JetBrains Mono','Fira Code',monospace",
+  };
+
+  const modal = {
+    background: "#080810",
+    border: "1px solid rgba(247,106,106,0.25)",
+    borderLeft: "3px solid #f76a6a",
+    borderRadius: 12,
+    padding: "24px 26px",
+    width: "min(96vw, 700px)",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: 18,
+  };
+
+  const tabBtn = (active) => ({
+    fontFamily: "inherit", fontSize: 10, padding: "5px 12px",
+    borderRadius: 5,
+    border: `1px solid ${active ? "#f76a6a" : "rgba(255,255,255,0.08)"}`,
+    background: active ? "rgba(247,106,106,0.1)" : "transparent",
+    color: active ? "#f76a6a" : "rgba(255,255,255,0.35)",
+    cursor: "pointer", letterSpacing: 1,
+  });
+
+  const upNodes = nodes.filter(n => n.status === "up");
+
+  return (
+    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={modal}>
+
+        {/* ── Header ── */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 8, flexShrink: 0,
+            background: "rgba(247,106,106,0.1)", border: "1px solid rgba(247,106,106,0.3)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20,
+            boxShadow: pulse ? "0 0 18px rgba(247,106,106,0.35)" : "none",
+            transition: "box-shadow 0.8s",
+          }}>⚠</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#f76a6a", letterSpacing: 1 }}>
+              READ FAILURE
+            </div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 3 }}>
+              {isConsistencyError ? "Consistency level not achievable" : "Node(s) unreachable"}
+              {" · "}RF={replicationFactor} · {upNodes.length}/{nodes.length} nodes UP
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "transparent", border: "none",
+            color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 18, padding: 0,
+          }}>✕</button>
+        </div>
+
+        {/* ── Error box ── */}
+        <div style={{
+          background: "rgba(247,106,106,0.05)", border: "1px solid rgba(247,106,106,0.2)",
+          borderRadius: 7, padding: "10px 13px",
+          fontSize: 10, color: "#f76a6a", lineHeight: 1.8,
+        }}>
+          <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, marginBottom: 4, letterSpacing: 1 }}>
+            CASSANDRA ERROR
+          </div>
+          <div>{message || "Read failed"}</div>
+          {queriedKey && queriedKey !== "(all)" && (
+            <div style={{ marginTop: 6, color: "rgba(255,255,255,0.5)" }}>
+              Queried key: <strong style={{ color: "#facc15" }}>"{queriedKey}"</strong>
+            </div>
+          )}
+          {/* Node status quick view */}
+          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {nodes.map(n => (
+              <span key={n.id} style={{
+                fontSize: 9, padding: "2px 7px", borderRadius: 4,
+                background: n.status === "up" ? "rgba(106,247,184,0.1)" : "rgba(247,106,106,0.1)",
+                border: `1px solid ${n.status === "up" ? "rgba(106,247,184,0.3)" : "rgba(247,106,106,0.3)"}`,
+                color: n.status === "up" ? "#6af7b8" : "#f76a6a",
+              }}>
+                {n.id} {n.status === "up" ? "●" : "✕"}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tabs ── */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button style={tabBtn(phase === 0)} onClick={() => setPhase(0)}>① What happened</button>
+          <button style={tabBtn(phase === 1)} onClick={() => setPhase(1)}>
+            {isConsistencyError ? "② Consistency Levels" : "② Why?"}
+          </button>
+          <button style={tabBtn(phase === 2)} onClick={() => setPhase(2)}>③ CAP Theorem</button>
+        </div>
+
+        {/* ── Phase 0: What happened ── */}
+        {phase === 0 && (
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {nodes.length > 0 && (
+              <MiniRing
+                deadNodeIds={deadNodeIds}
+                affectedKey={queriedKey}
+                nodeColors={nodeColors}
+                allNodes={nodes}
+              />
+            )}
+            <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 10 }}>
+              {isConsistencyError ? (
+                <>
+                  <Step num="1" color="#facc15"
+                    title={`Read requested: key "${queriedKey}"`}
+                    desc={`Consistency level = ${consistencyLevel} → Cassandra must contact ${
+                      { ONE: 1, QUORUM: Math.floor(replicationFactor / 2) + 1, ALL: replicationFactor }[consistencyLevel] ?? "?"
+                    } replica(s) to respond.`}
+                  />
+                  <Step num="2" color="#f76a6a"
+                    title={`Only ${upNodes.length}/${nodes.length} nodes UP`}
+                    desc={`Not enough replicas available to satisfy the requested consistency level.`}
+                  />
+                  <Step num="3" color="#f76a6a"
+                    title="Read fails — Consistency not achievable"
+                    desc={`With RF=${replicationFactor} and ${upNodes.length} node(s) UP, ${consistencyLevel} is impossible. Try ONE to read anyway.`}
+                  />
+                </>
+              ) : (
+                <>
+                  <Step num="1" color="#facc15"
+                    title={`Key "${queriedKey}" stored with RF=${replicationFactor}`}
+                    desc={primaryNodeId
+                      ? `The hash placed this key on ${primaryNodeId} (+ replicas if RF > 1).`
+                      : "The Murmur3 hash determined the responsible node(s)."}
+                  />
+                  <Step num="2" color="#f76a6a"
+                    title={deadNodeIds.length > 0
+                      ? `${deadNodeIds.join(", ")} removed from cluster`
+                      : "Node(s) unreachable"}
+                    desc="Cassandra can no longer reach enough replicas to respond."
+                  />
+                  <Step num="3" color="#f76a6a"
+                    title="Read fails"
+                    desc={`With RF=${replicationFactor} and ${upNodes.length}/${nodes.length} nodes UP, the data is inaccessible.`}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Phase 1: Why / Consistency ── */}
+        {phase === 1 && (
+          isConsistencyError ? (
+            <ConsistencyExplainer
+              consistencyLevel={consistencyLevel}
+              replicationFactor={replicationFactor}
+              nodes={nodes}
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <ExplainBlock
+                icon="🔢"
+                title={`RF = ${replicationFactor} = single point of failure`}
+                color="#f76a6a"
+                desc={`With RF=${replicationFactor}, each piece of data only exists on ${replicationFactor} node${replicationFactor > 1 ? "s" : ""}. If those nodes go down, the data becomes inaccessible. To survive the loss of one node with RF=2, you need at least 2 nodes UP.`}
+              />
+              <ExplainBlock
+                icon="🔁"
+                title="How to prevent this?"
+                color="#6af7b8"
+                desc="Increase the RF. With RF=3 and 3 nodes, Cassandra can lose 1 node and continue serving data (with consistency level ONE or QUORUM)."
+              />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 4 }}>
+                {[{ rf: 1, survive: 0, color: "#f76a6a" }, { rf: 2, survive: 0, color: "#f7c76a" }, { rf: 3, survive: 1, color: "#6af7b8" }].map(r => (
+                  <div key={r.rf} style={{
+                    background: `${r.color}08`, border: `1px solid ${r.color}30`,
+                    borderRadius: 7, padding: "10px 12px", textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: r.color }}>RF={r.rf}</div>
+                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+                      survives {r.survive} failure{r.survive !== 1 ? "s" : ""}
+                    </div>
+                    <div style={{ marginTop: 6, display: "flex", justifyContent: "center", gap: 4 }}>
+                      {Array.from({ length: 3 }, (_, i) => (
+                        <div key={i} style={{
+                          width: 10, height: 10, borderRadius: "50%",
+                          background: i < r.rf ? r.color : "rgba(255,255,255,0.08)",
+                        }} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ── Phase 2: CAP Theorem ── */}
+        {phase === 2 && (
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <CAPTriangle highlighted="C" />
+            <div style={{ flex: 1, minWidth: 200, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>
+                The CAP theorem states that a distributed system can only guarantee{" "}
+                <strong style={{ color: "#fff" }}>2 of the 3</strong> properties simultaneously:
+              </div>
+              <CAPRow letter="C" color="#f76a6a" label="Consistency"
+                desc="All nodes see the same data at the same time." sacrificed />
+              <CAPRow letter="A" color="#6af7b8" label="Availability"
+                desc="The cluster always responds, even during failures." />
+              <CAPRow letter="P" color="#facc15" label="Partition Tolerance"
+                desc="The system continues even if nodes can no longer communicate." />
+              <div style={{
+                marginTop: 4, padding: "8px 12px", borderRadius: 6,
+                background: "rgba(32,178,170,0.06)", border: "1px solid rgba(32,178,170,0.2)",
+                fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.7,
+              }}>
+                <span style={{ color: ACCENT, fontWeight: 700 }}>Cassandra chooses AP.</span>{" "}
+                It stays available and partition-tolerant, but sacrifices consistency when replicas are insufficient.{" "}
+                {isConsistencyError
+                  ? `Here, ${consistencyLevel} requires too many nodes UP to be guaranteed.`
+                  : `The data on ${deadNodeIds.join(", ") || "the dead node"} is inaccessible → C sacrificed.`
+                }
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Actions ── */}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
+          {phase < 2 && (
+            <button onClick={() => setPhase(p => p + 1)} style={{
+              fontFamily: "inherit", fontSize: 10, padding: "7px 16px",
+              borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)",
+              background: "transparent", color: "rgba(255,255,255,0.5)", cursor: "pointer",
+            }}>Next →</button>
+          )}
+          {onRetry && (
+            <button onClick={onRetry} style={{
+              fontFamily: "inherit", fontSize: 10, padding: "7px 16px",
+              borderRadius: 6, border: `1px solid ${ACCENT}`,
+              background: "rgba(32,178,170,0.1)", color: ACCENT, cursor: "pointer",
+            }}>↺ Retry</button>
+          )}
+          <button onClick={onClose} style={{
+            fontFamily: "inherit", fontSize: 10, padding: "7px 16px",
+            borderRadius: 6, border: "1px solid rgba(247,106,106,0.4)",
+            background: "rgba(247,106,106,0.08)", color: "#f76a6a", cursor: "pointer",
+          }}>Close</button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+function Step({ num, color, title, desc }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <div style={{
+        width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+        background: `${color}22`, border: `1px solid ${color}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 9, fontWeight: 800, color,
+      }}>{num}</div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function ExplainBlock({ icon, title, color, desc }) {
+  return (
+    <div style={{
+      background: `${color}06`, border: `1px solid ${color}22`,
+      borderLeft: `3px solid ${color}`, borderRadius: 7, padding: "10px 13px",
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 5 }}>{icon} {title}</div>
+      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", lineHeight: 1.7 }}>{desc}</div>
+    </div>
+  );
+}
+
+function CAPRow({ letter, color, label, desc, sacrificed }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", opacity: sacrificed ? 1 : 0.7 }}>
+      <div style={{
+        width: 26, height: 26, borderRadius: 5, flexShrink: 0,
+        background: `${color}18`, border: `1px solid ${color}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 11, fontWeight: 800, color, position: "relative",
+      }}>
+        {letter}
+        {sacrificed && (
+          <div style={{
+            position: "absolute", inset: 0, display: "flex",
+            alignItems: "center", justifyContent: "center",
+            fontSize: 16, color: "#f76a6a", fontWeight: 900,
+          }}>✕</div>
+        )}
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color, marginBottom: 1 }}>
+          {label} {sacrificed && <span style={{ color: "#f76a6a", fontSize: 9 }}>— sacrificed</span>}
+        </div>
+        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
 FICHIER: src\components\TokenRing.jsx
 ================================================================================
 
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 
 const W = 700, H = 700, CX = 350, CY = 350;
 const RING_R = 220;
 const NODE_R = 28;
 const SNAP_THR = 60;
 
-// ── Partitioner ranges ────────────────────────────────────────────────────────
 const PARTITIONERS = {
   murmur3: {
     name: "Murmur3",
     MIN: -9223372036854775808n,
     MAX: 9223372036854775807n,
-    RANGE: 18446744073709551616n, // 2^64
+    RANGE: 18446744073709551616n,
     ticks: [
       { val: -9223372036854775808n, label: "-9.2e18" },
       { val: -6917529027641081856n, label: "-6.9e18" },
       { val: -4611686018427387904n, label: "-4.6e18" },
       { val: -2305843009213693952n, label: "-2.3e18" },
-      { val: 0n,                   label: "0"       },
-      { val: 2305843009213693952n,  label: "2.3e18"  },
-      { val: 4611686018427387904n,  label: "4.6e18"  },
-      { val: 6917529027641081856n,  label: "6.9e18"  },
+      { val: 0n, label: "0" },
+      { val: 2305843009213693952n, label: "2.3e18" },
+      { val: 4611686018427387904n, label: "4.6e18" },
+      { val: 6917529027641081856n, label: "6.9e18" },
     ],
   },
   md5: {
     name: "MD5",
     MIN: 0n,
-    MAX: 170141183460469231731687303715884105727n, // 2^127 - 1
-    RANGE: 170141183460469231731687303715884105728n, // 2^127
+    MAX: 170141183460469231731687303715884105727n,
+    RANGE: 170141183460469231731687303715884105728n,
     ticks: (() => {
       const STEP = 170141183460469231731687303715884105728n / 8n;
       return Array.from({ length: 8 }, (_, i) => {
@@ -6172,79 +6732,60 @@ const PARTITIONERS = {
   },
 };
 
-// ── Auto-detect partitioner from a token value ────────────────────────────────
 function detectPartitioner(tokenVal) {
-  // Murmur3: tokens are signed, can be negative or large positive (< 2^63)
-  // MD5: tokens are always non-negative and can be > 2^63
   if (tokenVal < 0n) return "murmur3";
   if (tokenVal > 9223372036854775807n) return "md5";
-  // Ambiguous (small positive) — default to murmur3
   return "murmur3";
 }
 
-// ── Get partitioner config from all nodes ─────────────────────────────────────
 function getPartitionerFromNodes(nodes) {
   for (const node of nodes) {
     if (!node.tokens || node.tokens.length === 0) continue;
     for (const tok of node.tokens) {
-      try {
-        const big = BigInt(String(tok));
-        return detectPartitioner(big);
-      } catch { /* skip */ }
+      try { return detectPartitioner(BigInt(String(tok))); } catch { /* skip */ }
     }
   }
-  return "murmur3"; // default until we know
+  return "murmur3";
+}
+
+function darkenColor(hex, percent = 20) {
+  if (!hex || !hex.startsWith('#')) return hex;
+  let num = parseInt(hex.replace("#", ""), 16),
+    amt = Math.round(2.55 * percent),
+    R = Math.max(0, Math.min(255, (num >> 16) - amt)),
+    G = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) - amt)),
+    B = Math.max(0, Math.min(255, (num & 0x0000FF) - amt));
+  return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 const PALETTE = { x: 55, y: 645 };
+const NODE_COLORS = ["#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a", "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a"];
 
-const NODE_COLORS = [
-  "#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a",
-  "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a",
-];
-
-// ── Ring math (partitioner-aware) ─────────────────────────────────────────────
 function makeMath(p) {
   const { MIN, RANGE } = p;
-
   function tokToAngle(tok) {
     const t = typeof tok === "bigint" ? tok : BigInt(String(tok));
-    // normalize to [0, 1) then to angle
-    // Use integer math to preserve precision
-    const shifted = t - MIN; // always >= 0
-    // normalized = shifted / RANGE, as float
+    const shifted = t - MIN;
     const normalized = Number((shifted * 1_000_000n) / RANGE) / 1_000_000;
     return normalized * 2 * Math.PI - Math.PI / 2;
   }
-
   function angleToTok(angle) {
     const normalized = ((angle + Math.PI / 2) / (2 * Math.PI) + 1) % 1;
     const steps = BigInt(Math.round(normalized * 1_000_000_000));
     return MIN + (RANGE * steps / 1_000_000_000n);
   }
-
   function ringXY(tok) {
     const angle = tokToAngle(tok);
-    return {
-      x: CX + RING_R * Math.cos(angle),
-      y: CY + RING_R * Math.sin(angle),
-    };
+    return { x: CX + RING_R * Math.cos(angle), y: CY + RING_R * Math.sin(angle) };
   }
-
   return { tokToAngle, angleToTok, ringXY };
 }
 
-function distCenter(x, y) {
-  return Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
-}
+function distCenter(x, y) { return Math.sqrt((x - CX) ** 2 + (y - CY) ** 2); }
 
 function getPrimaryToken(node) {
-  if (node.tokens && node.tokens.length > 0) {
-    return BigInt(String(node.tokens[0]));
-  }
-  if (node.token != null) {
-    return typeof node.token === "bigint" ? node.token : BigInt(String(node.token));
-  }
+  if (node.tokens && node.tokens.length > 0) return BigInt(String(node.tokens[0]));
+  if (node.token != null) return typeof node.token === "bigint" ? node.token : BigInt(String(node.token));
   return 0n;
 }
 
@@ -6252,50 +6793,77 @@ function fmtToken(t) {
   const n = Number(t);
   if (!isFinite(n)) return String(t).slice(0, 12) + "…";
   if (Math.abs(n) > 1e15) return (n / 1e18).toFixed(1) + "e18";
-  if (Math.abs(n) > 1e35) return (n / 1e38).toFixed(1) + "e38";
   return String(t);
 }
 
+function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
 export default function TokenRing({
-  nodes = [],
-  leavingNodes = [],
-  cluster = {},
-  nodeDataMap = {},
-  onAddNode,
-  onRemoveNode,
-  disabled = false,
-  simulationResult,
-  csvDistribution = [],
+  nodes = [], leavingNodes = [], cluster = {}, nodeDataMap = {},
+  onAddNode, onRemoveNode, disabled = false,
+  csvDistribution = [], writeFlowAnim = null, gossipAnim = null,
+  hashingType = null,  
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
-
   const [palDragging, setPalDragging] = useState(false);
   const [ghostXY, setGhostXY] = useState(PALETTE);
   const [snapToken, setSnapToken] = useState(null);
   const [hoveredId, setHoveredId] = useState(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
   const [tooltipPx, setTooltipPx] = useState({ x: 0, y: 0 });
   const hoverTimeoutRef = useRef(null);
+  const hoverDelayRef = useRef(null);
+  const isHoveringMenuRef = useRef(false);
+  const [animPoints, setAnimPoints] = useState([]);
+  const prevDistributionLengthRef = useRef(0);
 
-  // ── Auto-detect partitioner from live node tokens ─────────────────────────
-  const partitionerKey = useMemo(() => getPartitionerFromNodes(nodes), [nodes]);
+  const partitionerKey = useMemo(() => {
+  if (hashingType && PARTITIONERS[hashingType]) return hashingType;  // prop en priorité
+  return getPartitionerFromNodes(nodes);                              // fallback auto-detect
+}, [nodes, hashingType]);
   const partitioner = PARTITIONERS[partitionerKey];
   const { tokToAngle, angleToTok, ringXY } = useMemo(() => makeMath(partitioner), [partitioner]);
-
   const nodeColorMap = useMemo(() => {
     const map = {};
     nodes.forEach((n, i) => { map[n.id] = NODE_COLORS[i % NODE_COLORS.length]; });
     return map;
   }, [nodes]);
 
+  useEffect(() => {
+    const prevLen = prevDistributionLengthRef.current;
+    const newLen = csvDistribution.length;
+    if (newLen === 0) { prevDistributionLengthRef.current = 0; setAnimPoints([]); return; }
+    if (newLen > prevLen) {
+      for (let i = prevLen; i < newLen; i++) {
+        const row = csvDistribution[i];
+        if (row.hash == null) continue;
+        let targetX = CX, targetY = CY;
+        try { const pos = ringXY(BigInt(String(row.hash))); targetX = pos.x; targetY = pos.y; } catch { continue; }
+        const startTime = performance.now();
+        const pointId = `${row.rowId}-${i}`;
+        setAnimPoints(prev => [...prev, { id: pointId, x: CX, y: CY, targetX, targetY, done: false }]);
+        const ANIM_DURATION = 1200;
+        const animate = (now) => {
+          const t = Math.min((now - startTime) / ANIM_DURATION, 1);
+          const ease = easeOut(t);
+          const x = CX + (targetX - CX) * ease;
+          const y = CY + (targetY - CY) * ease;
+          const done = t >= 1;
+          setAnimPoints(prev => prev.map(p => p.id === pointId ? { ...p, x: done ? targetX : x, y: done ? targetY : y, done } : p));
+          if (!done) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+      }
+      prevDistributionLengthRef.current = newLen;
+    }
+  }, [csvDistribution, ringXY]);
+
   const getSvgXY = useCallback((e) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (W / rect.width),
-      y: (e.clientY - rect.top) * (H / rect.height),
-    };
+    return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
   }, []);
 
   const onPaletteMD = useCallback((e) => {
@@ -6304,72 +6872,67 @@ export default function TokenRing({
     setPalDragging(true);
     setGhostXY(getSvgXY(e));
     setSnapToken(null);
-
     const onMove = (ev) => {
       const { x, y } = getSvgXY(ev);
       setGhostXY({ x, y });
-      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) {
-        setSnapToken(angleToTok(Math.atan2(y - CY, x - CX)));
-      } else {
-        setSnapToken(null);
-      }
+      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) setSnapToken(angleToTok(Math.atan2(y - CY, x - CX)));
+      else setSnapToken(null);
     };
-
     const onUp = (ev) => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      setPalDragging(false);
-      setSnapToken(null);
+      setPalDragging(false); setSnapToken(null);
       const { x, y } = getSvgXY(ev);
-      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) {
-        onAddNode?.(angleToTok(Math.atan2(y - CY, x - CX)));
-      }
+      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) onAddNode?.(angleToTok(Math.atan2(y - CY, x - CX)));
     };
-
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [nodes, disabled, getSvgXY, onAddNode, angleToTok]);
 
   const onNodeEnter = useCallback((id, e) => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-    setHoveredId(id);
-    setTooltipPx(getSvgXY(e));
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
+    setHoveredId(id); setTooltipPx(getSvgXY(e)); setTooltipVisible(false);
+    hoverDelayRef.current = setTimeout(() => setTooltipVisible(true), 700);
   }, [getSvgXY]);
 
   const onNodeLeave = useCallback(() => {
-    hoverTimeoutRef.current = setTimeout(() => setHoveredId(null), 200);
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      if (isHoveringMenuRef.current) return;
+      setHoveredId(null); setTooltipVisible(false);
+    }, 1200);
+  }, []);
+
+  const onMenuLeave = useCallback(() => {
+    isHoveringMenuRef.current = false;
+    if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
+    hoverTimeoutRef.current = setTimeout(() => { setHoveredId(null); setTooltipVisible(false); }, 200);
   }, []);
 
   const sortedNodes = useMemo(() =>
-    [...nodes].sort((a, b) => {
-      const ta = getPrimaryToken(a);
-      const tb = getPrimaryToken(b);
-      return ta < tb ? -1 : ta > tb ? 1 : 0;
-    }), [nodes]);
+    [...nodes].sort((a, b) => { const ta = getPrimaryToken(a), tb = getPrimaryToken(b); return ta < tb ? -1 : ta > tb ? 1 : 0; }), [nodes]);
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", maxWidth: W, margin: "0 auto" }}>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}
-        onMouseLeave={() => { if (!palDragging) setHoveredId(null); }}
-      >
+        onMouseLeave={() => { if (!palDragging) onNodeLeave(); }}>
         <defs>
           <style>{`
             @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.1; } }
             @keyframes fadeOut { to { opacity: 0; transform: scale(1.3); } }
             .node-leaving { animation: fadeOut 0.6s ease forwards; }
+            @keyframes gossipRipple { 0% { r: 28; opacity: 0.7; } 100% { r: 52; opacity: 0; } }
           `}</style>
         </defs>
 
         {/* Ring */}
-        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={2} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(200,210,220,0.18)" strokeWidth={2.5} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
 
-        {/* Partitioner label */}
-        <text x={CX + RING_R + 10} y={CY - RING_R - 10}
-          fontSize={8} fill="rgba(255,255,255,0.2)" textAnchor="start">
+        <text x={CX + RING_R + 10} y={CY - RING_R - 10} fontSize={8} fill="rgba(255,255,255,0.2)" textAnchor="start">
           {partitioner.name}Partitioner
         </text>
 
@@ -6381,34 +6944,23 @@ export default function TokenRing({
           const ly = CY + (RING_R + 22) * Math.sin(angle);
           return (
             <g key={i}>
-              <line x1={x} y1={y}
-                x2={CX + (RING_R - 8) * Math.cos(angle)}
-                y2={CY + (RING_R - 8) * Math.sin(angle)}
-                stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
-              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-                fontSize={8} fill="rgba(255,255,255,0.15)">{tick.label}</text>
+              <line x1={x} y1={y} x2={CX + (RING_R - 8) * Math.cos(angle)} y2={CY + (RING_R - 8) * Math.sin(angle)} stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill="rgba(255,255,255,0.15)">{tick.label}</text>
             </g>
           );
         })}
 
-        {/* ── Vnode arcs: one arc per token, colour = owning node ── */}
+        {/* Vnode arcs */}
         {(() => {
-          // Flatten all tokens from non-joining nodes into a sorted list
           const allTokens = [];
           nodes.forEach(node => {
             if (node.status === "joining" || !node.tokens?.length) return;
             node.tokens.forEach(tok => {
-              try {
-                allTokens.push({ tok: BigInt(String(tok)), nodeId: node.id });
-              } catch { /* skip */ }
+              try { allTokens.push({ tok: BigInt(String(tok)), nodeId: node.id }); } catch { /* skip */ }
             });
           });
-
           if (allTokens.length < 2) return null;
-
-          // Sort by token value ascending
           allTokens.sort((a, b) => a.tok < b.tok ? -1 : a.tok > b.tok ? 1 : 0);
-
           return allTokens.map((entry, i) => {
             const prev = allTokens[(i - 1 + allTokens.length) % allTokens.length];
             const color = nodeColorMap[entry.nodeId] ?? "#20B2AA";
@@ -6416,174 +6968,265 @@ export default function TokenRing({
             const endAngle = tokToAngle(entry.tok);
             let delta = endAngle - startAngle;
             if (delta < 0) delta += 2 * Math.PI;
-            // Skip arcs that wrap the entire ring (degenerate)
             if (delta > Math.PI * 1.99) return null;
-            const start = {
-              x: CX + RING_R * Math.cos(startAngle),
-              y: CY + RING_R * Math.sin(startAngle),
-            };
-            const end = {
-              x: CX + RING_R * Math.cos(endAngle),
-              y: CY + RING_R * Math.sin(endAngle),
-            };
+            const start = { x: CX + RING_R * Math.cos(startAngle), y: CY + RING_R * Math.sin(startAngle) };
+            const end = { x: CX + RING_R * Math.cos(endAngle), y: CY + RING_R * Math.sin(endAngle) };
             const large = delta > Math.PI ? 1 : 0;
-            const d = `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`;
-            return (
-              <path key={`vnode-arc-${entry.nodeId}-${String(entry.tok)}`}
-                d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.22} />
-            );
+            return <path key={`arc-${entry.nodeId}-${String(entry.tok)}`} d={`M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`} fill="none" stroke={color} strokeWidth={8} opacity={0.22} style={{ pointerEvents: "none" }} />;
           });
         })()}
 
-        {/* Token dots (one per vnode, on the ring) */}
-        {nodes.map((node) => {
+        {/* Token dots */}
+        {nodes.map(node => {
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           if (!node.tokens?.length || node.status === "joining") return null;
           return node.tokens.map((tok, i) => {
             try {
               const pos = ringXY(BigInt(String(tok)));
-              return (
-                <circle key={`tok-${node.id}-${i}`}
-                  cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5}
-                  fill={color} opacity={i === 0 ? 0.9 : 0.5} />
-              );
+              return <circle key={`tok-${node.id}-${i}`} cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5} fill={color} opacity={i === 0 ? 0.9 : 0.5} style={{ pointerEvents: "none" }} />;
             } catch { return null; }
           });
         })}
 
-        {/* CSV hash points */}
-        {csvDistribution.map((row, i) => {
-          if (row.hash == null) return null;
-          try {
-            const pos = ringXY(BigInt(String(row.hash)));
-            return <circle key={`csv-${i}`} cx={pos.x} cy={pos.y} r={3} fill="#facc15" stroke="#ca8a04" strokeWidth={1} opacity={0.7} />;
-          } catch { return null; }
-        })}
+        {/* CSV anim points */}
+        {animPoints.map(p => (
+          <g key={p.id} style={{ pointerEvents: "none" }}>
+            {!p.done && <line x1={CX} y1={CY} x2={p.x} y2={p.y} stroke="#facc15" strokeWidth={1} opacity={0.2} strokeDasharray="3 3" />}
+            <circle cx={p.x} cy={p.y} r={p.done ? 3 : 4} fill="#facc15" stroke="#ca8a04" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.75 : 1} />
+          </g>
+        ))}
 
-        {/* Simulation hash point */}
-        {simulationResult?.hash != null && (() => {
+        {/* Write flow animation */}
+        {writeFlowAnim && (() => {
           try {
-            const pos = ringXY(BigInt(String(simulationResult.hash)));
+            const { key: rawKey, hash, replicas, progress: p } = writeFlowAnim;
+            const hashBig = BigInt(String(hash));
+            const hashPos = ringXY(hashBig);
+            const hashLabel = String(hash).slice(0, 12) + (String(hash).length > 12 ? "…" : "");
+            const replicaColors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
+            const P1 = 0.2, P2 = 0.45, P3 = 0.65, P4 = 1.0;
+            const rawOpacity = p < P1 ? easeOut(p / P1) : p < P2 ? 1 - easeOut((p - P1) / (P2 - P1)) : 0;
+            const hashLabelOpacity = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : p < P3 ? 1 : 0;
+            const dotPhase = p < P2 ? 0 : p < P3 ? easeOut((p - P2) / (P3 - P2)) : 1;
+            const dotX = CX + (hashPos.x - CX) * dotPhase;
+            const dotY = CY + (hashPos.y - CY) * dotPhase;
+            const showDot = p >= P2 && p < P3;
+            const ringMarkerOpacity = p >= P3 ? Math.min((p - P3) / 0.05, 1) : 0;
+            const replicaPhase = p < P3 ? 0 : easeOut((p - P3) / (P4 - P3));
             return (
-              <g>
-                <circle cx={pos.x} cy={pos.y} r={6} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
-                <text x={pos.x} y={pos.y - 14} textAnchor="middle" fontSize={9} fill="#facc15" fontWeight="700">
-                  hash:{String(simulationResult.hash).slice(0, 10)}…
-                </text>
+              <g style={{ pointerEvents: "none" }}>
+                {rawOpacity > 0 && (
+                  <g opacity={rawOpacity}>
+                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#0a0a14" stroke="rgba(250,204,21,0.4)" strokeWidth={1} />
+                    <text x={CX} y={CY - 4} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="rgba(255,255,255,0.5)" letterSpacing={1}>RAW KEY</text>
+                    <text x={CX} y={CY + 10} textAnchor="middle" dominantBaseline="middle" fontSize={12} fontWeight="700" fill="#facc15">"{rawKey}"</text>
+                  </g>
+                )}
+                {hashLabelOpacity > 0 && (
+                  <g opacity={hashLabelOpacity}>
+                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#0a0a14" stroke="rgba(56,189,248,0.5)" strokeWidth={1} />
+                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="rgba(255,255,255,0.4)" letterSpacing={2}>HASH(key)</text>
+                    <text x={CX} y={CY + 8} textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight="700" fill="#38bdf8">{hashLabel}</text>
+                  </g>
+                )}
+                {showDot && <line x1={CX} y1={CY} x2={dotX} y2={dotY} stroke="#38bdf8" strokeWidth={1.5} opacity={0.3} strokeDasharray="4 3" />}
+                {showDot && (
+                  <circle cx={dotX} cy={dotY} r={5} fill="#38bdf8" stroke="#0ea5e9" strokeWidth={1.5}>
+                    <animate attributeName="r" values="4;7;4" dur="0.5s" repeatCount="indefinite" />
+                  </circle>
+                )}
+                {ringMarkerOpacity > 0 && (
+                  <g opacity={ringMarkerOpacity}>
+                    <circle cx={hashPos.x} cy={hashPos.y} r={7} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
+                    <text x={hashPos.x} y={hashPos.y - 16} textAnchor="middle" fontSize={8} fill="#facc15" fontWeight="700">H({hashLabel.slice(0, 8)})</text>
+                  </g>
+                )}
+                {p >= P3 && replicas.map((replica, i) => {
+                  const nodePos = ringXY(getPrimaryToken(replica));
+                  const color = replicaColors[i % replicaColors.length];
+                  const rx = hashPos.x + (nodePos.x - hashPos.x) * replicaPhase;
+                  const ry = hashPos.y + (nodePos.y - hashPos.y) * replicaPhase;
+                  const done = replicaPhase >= 0.98;
+                  return (
+                    <g key={`flow-${i}`}>
+                      <line x1={hashPos.x} y1={hashPos.y} x2={rx} y2={ry} stroke={color} strokeWidth={1.5} opacity={0.4} strokeDasharray="3 2" />
+                      <circle cx={rx} cy={ry} r={done ? 5 : 6} fill={color} opacity={done ? 0.85 : 1}>
+                        {!done && <animate attributeName="r" values="4;7;4" dur="0.5s" repeatCount="indefinite" />}
+                      </circle>
+                      {done && <circle cx={nodePos.x} cy={nodePos.y} r={NODE_R + 4} fill="none" stroke={color} strokeWidth={2} opacity={0.6}><animate attributeName="opacity" values="0.6;0" dur="0.8s" fill="freeze" /><animate attributeName="r" from={NODE_R + 4} to={NODE_R + 18} dur="0.8s" fill="freeze" /></circle>}
+                      {i === 0 && done && <text x={nodePos.x} y={nodePos.y - NODE_R - 18} textAnchor="middle" fontSize={8} fill={color} fontWeight="700" opacity={0.9}>★ PRIMARY</text>}
+                    </g>
+                  );
+                })}
               </g>
             );
           } catch { return null; }
         })()}
 
-        {/* Simulation replica lines */}
-        {simulationResult?.replicas?.length > 0 && simulationResult.primaryNode && (() => {
-          const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
-          return simulationResult.replicas.map((replica, i) => {
-            try {
-              const hashPos = ringXY(BigInt(String(simulationResult.hash)));
-              const nodePos = ringXY(getPrimaryToken(replica));
-              return (
-                <line key={`sim-line-${i}`}
-                  x1={hashPos.x} y1={hashPos.y} x2={nodePos.x} y2={nodePos.y}
-                  stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
-              );
-            } catch { return null; }
-          });
+        {/* ── Gossip animation en phases: SOURCE → INFO → PROPAGATION ── */}
+        {gossipAnim && (() => {
+          try {
+            const { from, to, fromData, toData, progress: p } = gossipAnim;
+            const fromPos = ringXY(getPrimaryToken(from));
+            const toPos = ringXY(getPrimaryToken(to));
+
+            // Phases
+            const P1 = 0.25;  // Affiche le nœud source + ses infos gossip
+            const P2 = 0.55;  // Paquet voyage de from → to
+            const P3 = 1.0;   // Réception + ripple sur le nœud destinataire
+
+            // Phase 0→P1: label source apparait
+            const srcOpacity = p < P1 ? easeOut(p / P1) : p < P2 ? 1 - easeOut((p - P1) / (P2 - P1)) : 0;
+
+            // Phase P1→P2: paquet voyage
+            const travelPhase = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
+            const px2 = fromPos.x + (toPos.x - fromPos.x) * travelPhase;
+            const py2 = fromPos.y + (toPos.y - fromPos.y) * travelPhase;
+            const showPacket = p >= P1 && p < P2;
+
+            // Phase P2→P3: réception
+            const recvOpacity = p >= P2 ? easeOut((p - P2) / (P3 - P2)) : 0;
+            const showRipple = p >= P2;
+
+            const GOSSIP_COLOR = "#a78bfa";
+
+            return (
+              <g style={{ pointerEvents: "none" }}>
+                {/* Phase 1 : label SOURCE avec heartbeat */}
+                {srcOpacity > 0 && (
+                  <g opacity={srcOpacity}>
+                    <rect
+                      x={fromPos.x - 60} y={fromPos.y - NODE_R - 48}
+                      width={120} height={40} rx={5}
+                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}66`} strokeWidth={1}
+                    />
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 38} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>GOSSIP FROM</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 24} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{from.id}</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 12} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.35)">
+                      gen:{fromData?.generation ?? "?"} · hb:{fromData?.heartbeat ?? "?"}
+                    </text>
+                  </g>
+                )}
+
+                {/* Ligne de trajet */}
+                {showPacket && (
+                  <line x1={fromPos.x} y1={fromPos.y} x2={px2} y2={py2}
+                    stroke={GOSSIP_COLOR} strokeWidth={1} opacity={0.25} strokeDasharray="3 3" />
+                )}
+
+                {/* Paquet gossip en voyage */}
+                {showPacket && (
+                  <g>
+                    <circle cx={px2} cy={py2} r={5} fill={GOSSIP_COLOR} opacity={0.9}>
+                      <animate attributeName="r" values="4;6;4" dur="0.4s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Label flottant sur le paquet */}
+                    <rect x={px2 - 28} y={py2 - 22} width={56} height={16} rx={3} fill="#0a0a14" opacity={0.85} />
+                    <text x={px2} y={py2 - 13} textAnchor="middle" fontSize={7} fill={GOSSIP_COLOR}>
+                      hb:{fromData?.heartbeat ?? "?"}
+                    </text>
+                  </g>
+                )}
+
+                {/* Phase 3 : réception sur le nœud destinataire */}
+                {showRipple && (
+                  <g opacity={recvOpacity}>
+                    {/* Ripple d'arrivée */}
+                    <circle cx={toPos.x} cy={toPos.y} r={NODE_R + 6}
+                      fill="none" stroke={GOSSIP_COLOR} strokeWidth={2}>
+                      <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 22} dur="0.7s" fill="freeze" />
+                      <animate attributeName="opacity" values="0.8;0" dur="0.7s" fill="freeze" />
+                    </circle>
+                    {/* Label destinataire avec info reçue */}
+                    <rect
+                      x={toPos.x - 65} y={toPos.y - NODE_R - 52}
+                      width={130} height={44} rx={5}
+                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}88`} strokeWidth={1.5}
+                    />
+                    <text x={toPos.x} y={toPos.y - NODE_R - 43} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>RECEIVED BY</text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 29} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{to.id}</text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 16} textAnchor="middle" fontSize={7.5} fill="#6af7b8">
+                      ✓ gen:{toData?.generation ?? "?"} · hb:{toData?.heartbeat ?? "?"}
+                    </text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 5} textAnchor="middle" fontSize={7} fill="rgba(255,255,255,0.3)">
+                      {toData?.status ?? ""} · {toData?.dc ?? ""}
+                    </text>
+                  </g>
+                )}
+
+                {/* Point d'arrivée fixe */}
+                {p >= P2 && (
+                  <circle cx={toPos.x} cy={toPos.y} r={5} fill={GOSSIP_COLOR} opacity={Math.min(recvOpacity, 0.8)} />
+                )}
+              </g>
+            );
+          } catch { return null; }
         })()}
 
         {/* Nodes */}
-        {nodes.map((node) => {
+        {nodes.map(node => {
           const primaryTok = getPrimaryToken(node);
           const pos = ringXY(primaryTok);
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           const isHovered = hoveredId === node.id;
           const isDown = node.status === "down";
           const isJoining = node.status === "joining";
-          const isPrimary = simulationResult?.primaryNode?.id === node.id;
           const displayColor = isDown ? "#555" : color;
           const csvBadge = nodeDataMap[node.id]?.length ?? 0;
-
           const tokenRange = (() => {
             if (sortedNodes.length <= 1 || isJoining) return "";
             const idx = sortedNodes.findIndex(n => n.id === node.id);
             const prev = sortedNodes[(idx - 1 + sortedNodes.length) % sortedNodes.length];
             return `${fmtToken(getPrimaryToken(prev))} → ${fmtToken(primaryTok)}`;
           })();
+          // Highlight si ce nœud est actif dans le gossip
+          const isGossipActive = gossipAnim && (gossipAnim.from?.id === node.id || gossipAnim.to?.id === node.id);
 
           return (
-            <g key={node.id}
-              onMouseEnter={e => onNodeEnter(node.id, e)}
-              onMouseLeave={onNodeLeave}
-              style={{ cursor: isDown ? "not-allowed" : "pointer" }}
-            >
-              {isPrimary && (
-                <circle cx={pos.x} cy={pos.y} r={NODE_R + 8}
-                  fill="none" stroke="#3b82f6" strokeWidth={2} strokeDasharray="6 3" opacity={0.7} />
+            <g key={node.id} onMouseEnter={e => onNodeEnter(node.id, e)} onMouseLeave={onNodeLeave} style={{ cursor: isDown ? "not-allowed" : "pointer" }}>
+              {isGossipActive && (
+                <circle cx={pos.x} cy={pos.y} r={NODE_R + 6}
+                  fill="none" stroke="#a78bfa" strokeWidth={1.5} opacity={0.4} strokeDasharray="4 3" />
               )}
-
               {isJoining && (
                 <circle cx={pos.x} cy={pos.y} r={NODE_R + 10}
                   fill="none" stroke="#f7c76a" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}
                   style={{ animation: "spin 3s linear infinite", transformOrigin: `${pos.x}px ${pos.y}px` }} />
               )}
-
-              <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={isDown ? "#13132a" : `${displayColor}22`}
-                stroke={displayColor} strokeWidth={isPrimary ? 2.5 : 1.5} />
-
-              {isJoining && (
-                <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                  fill="transparent" stroke={color} strokeWidth={1.5}
-                  strokeDasharray="5 5" opacity={0.4}
-                  style={{ animation: "pulse 2s ease-in-out infinite" }} />
-              )}
-
-              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800" fill={isDown ? "#666" : displayColor}
+              <circle cx={pos.x} cy={pos.y} r={NODE_R} fill={isDown ? "#13132a" : `${displayColor}22`} stroke={displayColor} strokeWidth={1.5} />
+              {isJoining && <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="transparent" stroke={color} strokeWidth={1.5} strokeDasharray="5 5" opacity={0.4} style={{ animation: "pulse 2s ease-in-out infinite" }} />}
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle" fontSize={16} fontWeight="800"
+                fill={isDown ? "#555" : darkenColor(displayColor, 20)}
+                stroke="#000" strokeWidth="2.5" paintOrder="stroke" strokeLinejoin="round"
                 style={{ pointerEvents: "none" }}>
                 {isJoining ? "⟳" : node.id.replace("Node", "")}
               </text>
-              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
-                fontSize={7} fill={`${displayColor}88`} style={{ pointerEvents: "none" }}>
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle" fontSize={7} fontWeight="700"
+                fill={isDown ? "#444" : darkenColor(displayColor, 25)}
+                stroke="#000" strokeWidth="1.5" paintOrder="stroke" strokeLinejoin="round"
+                style={{ pointerEvents: "none" }}>
                 {isJoining ? "" : node.id}
               </text>
-
-              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7} fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.25)"}
-                style={{ pointerEvents: "none" }}>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle" fontSize={7}
+                fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.25)"} style={{ pointerEvents: "none" }}>
                 {isJoining ? "polling tokens..." : tokenRange}
               </text>
-
-              {/* Token count badge */}
               {node.tokens?.length > 0 && !isJoining && (
                 <g style={{ pointerEvents: "none" }}>
                   <circle cx={pos.x - 17} cy={pos.y - 17} r={9} fill={`${color}88`} />
-                  <text x={pos.x - 17} y={pos.y - 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={7} fontWeight="bold" fill="white">
-                    {node.tokens.length}t
-                  </text>
+                  <text x={pos.x - 17} y={pos.y - 17} textAnchor="middle" dominantBaseline="middle" fontSize={7} fontWeight="bold" fill="white">{node.tokens.length}t</text>
                 </g>
               )}
-
-              {/* CSV badge */}
               {csvBadge > 0 && (
                 <g style={{ pointerEvents: "none" }}>
                   <circle cx={pos.x + 17} cy={pos.y - 17} r={9} fill={color} />
-                  <text x={pos.x + 17} y={pos.y - 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={7.5} fontWeight="bold" fill="white">
-                    {csvBadge}
-                  </text>
+                  <text x={pos.x + 17} y={pos.y - 17} textAnchor="middle" dominantBaseline="middle" fontSize={7.5} fontWeight="bold" fill="white">{csvBadge}</text>
                 </g>
               )}
-
-              {/* Remove button — hidden while joining */}
-              {isHovered && !isJoining && (
-                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }}
-                  onMouseDown={e => e.stopPropagation()}
-                  style={{ cursor: "pointer" }}>
+              {isHovered && tooltipVisible && !isJoining && (
+                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()} style={{ cursor: "pointer" }}>
                   <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
-                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
                 </g>
               )}
             </g>
@@ -6591,70 +7234,41 @@ export default function TokenRing({
         })}
 
         {/* Leaving nodes */}
-        {leavingNodes.map((node) => {
+        {leavingNodes.map(node => {
           const pos = ringXY(getPrimaryToken(node));
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           return (
             <g key={`leaving-${node.id}`} style={{ pointerEvents: "none" }}>
-              <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={`${color}22`} stroke={color} strokeWidth={1.5} className="node-leaving" />
-              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12}
-                fill="none" stroke="#f76a6a" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} className="node-leaving" />
-              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800" fill={color} className="node-leaving">
-                {node.id.replace("Node", "")}
-              </text>
-              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7.5} fill="#f76a6a99" className="node-leaving">leaving...</text>
+              <circle cx={pos.x} cy={pos.y} r={NODE_R} fill={`${color}22`} stroke={color} strokeWidth={1.5} className="node-leaving" />
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12} fill="none" stroke="#f76a6a" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} className="node-leaving" />
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle" fontSize={16} fontWeight="800" fill={color} className="node-leaving">{node.id.replace("Node", "")}</text>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle" fontSize={7.5} fill="#f76a6a99" className="node-leaving">leaving...</text>
             </g>
           );
         })}
 
-        {/* Snap preview */}
         {snapToken !== null && (() => {
           const pos = ringXY(snapToken);
-          return (
-            <circle cx={pos.x} cy={pos.y} r={NODE_R}
-              fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3"
-              style={{ pointerEvents: "none" }} />
-          );
+          return <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3" style={{ pointerEvents: "none" }} />;
         })()}
 
-        {/* Palette ghost */}
-        {palDragging && (
-          <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R}
-            fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5}
-            style={{ pointerEvents: "none" }} />
-        )}
+        {palDragging && <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R} fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
 
-        {/* Palette */}
         {!palDragging && (
-          <g onMouseDown={onPaletteMD} style={{
-            cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab",
-            opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1
-          }}>
-            <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R}
-              fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
-            <text x={PALETTE.x} y={PALETTE.y} textAnchor="middle" dominantBaseline="middle"
-              fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
-            <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
-              {nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}
-            </text>
+          <g onMouseDown={onPaletteMD} style={{ cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab", opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1 }}>
+            <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R} fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
+            <text x={PALETTE.x} y={PALETTE.y} textAnchor="middle" dominantBaseline="middle" fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
+            <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">{nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}</text>
           </g>
         )}
 
-        {/* Center label */}
         <text x={CX} y={CY - 10} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.2)" letterSpacing={2}>TOKEN RING</text>
-        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">
-          {nodes.length} node{nodes.length !== 1 ? "s" : ""}
-        </text>
-        {nodes.length === 0 && (
-          <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>
-        )}
+        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">{nodes.length} node{nodes.length !== 1 ? "s" : ""}</text>
+        {nodes.length === 0 && <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>}
       </svg>
 
       {/* Tooltip */}
-      {hoveredId && (() => {
+      {hoveredId && tooltipVisible && (() => {
         const node = nodes.find(n => n.id === hoveredId);
         if (!node) return null;
         const data = nodeDataMap[hoveredId] ?? [];
@@ -6664,27 +7278,13 @@ export default function TokenRing({
         const flipX = tooltipPx.x > ww * 0.65;
         const flipY = tooltipPx.y > wh * 0.70;
         const backendInfo = cluster[hoveredId];
-
         return (
           <div
-            onMouseEnter={() => { if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current); }}
-            onMouseLeave={onNodeLeave}
-            style={{
-              position: "absolute",
-              left: tooltipPx.x + (flipX ? -240 : 20),
-              top: tooltipPx.y + (flipY ? -280 : 10),
-              width: 230, maxHeight: 320, overflowY: "auto",
-              background: "#0d0d1a",
-              border: `1px solid ${color}55`, borderLeft: `3px solid ${color}`,
-              borderRadius: 8, padding: "12px 14px", zIndex: 30,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-              fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace",
-            }}>
+            onMouseEnter={() => { isHoveringMenuRef.current = true; if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current); }}
+            onMouseLeave={onMenuLeave}
+            style={{ position: "absolute", left: tooltipPx.x + (flipX ? -240 : 20), top: tooltipPx.y + (flipY ? -280 : 10), width: 230, maxHeight: 320, overflowY: "auto", background: "#0d0d1a", border: `1px solid ${color}55`, borderLeft: `3px solid ${color}`, borderRadius: 8, padding: "12px 14px", zIndex: 30, boxShadow: "0 12px 40px rgba(0,0,0,0.6)", fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
             <div style={{ color, fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{node.id}</div>
-            <div style={{ color: `${color}99`, fontSize: 10, marginBottom: 4 }}>
-              {node.status ?? "up"} · {node.tokens?.length ?? 0} tokens · {partitioner.name}
-            </div>
-
+            <div style={{ color: `${color}99`, fontSize: 10, marginBottom: 4 }}>{node.status ?? "up"} · {node.tokens?.length ?? 0} tokens · {partitioner.name}</div>
             {backendInfo && (
               <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 9, marginBottom: 8, borderBottom: `1px solid ${color}22`, paddingBottom: 6 }}>
                 <div>IP: {backendInfo.ip || "—"}</div>
@@ -6693,35 +7293,24 @@ export default function TokenRing({
                 {node.tokens?.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ color: `${color}88`, marginBottom: 2 }}>Tokens ({node.tokens.length}):</div>
-                    {node.tokens.slice(0, 4).map((t, i) => (
-                      <div key={i} style={{ fontSize: 8, opacity: 0.7 }}>{String(t)}</div>
-                    ))}
-                    {node.tokens.length > 4 && (
-                      <div style={{ fontSize: 8, opacity: 0.5 }}>+{node.tokens.length - 4} more…</div>
-                    )}
+                    {node.tokens.slice(0, 4).map((t, i) => <div key={i} style={{ fontSize: 8, opacity: 0.7 }}>{String(t)}</div>)}
+                    {node.tokens.length > 4 && <div style={{ fontSize: 8, opacity: 0.5 }}>+{node.tokens.length - 4} more…</div>}
                   </div>
                 )}
               </div>
             )}
-
-            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, letterSpacing: 1, marginBottom: 5 }}>
-              DATA ({data.length} {data.length === 1 ? "entry" : "entries"})
-            </div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, letterSpacing: 1, marginBottom: 5 }}>DATA ({data.length} {data.length === 1 ? "entry" : "entries"})</div>
             {data.length === 0
               ? <div style={{ color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>no data stored</div>
               : data.map((item, i) => (
                 <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 3 }}>
                   <span style={{ color, minWidth: 0, flexShrink: 0, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.key}</span>
                   <span style={{ color: "rgba(255,255,255,0.25)" }}>→</span>
-                  <span style={{ color: "rgba(255,255,255,0.55)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {String(item.value).slice(0, 30)}{String(item.value).length > 30 ? "…" : ""}
-                  </span>
+                  <span style={{ color: "rgba(255,255,255,0.55)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(item.value).slice(0, 30)}{String(item.value).length > 30 ? "…" : ""}</span>
                 </div>
               ))
             }
-            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
-              hover × to remove
-            </div>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>hover × to remove</div>
           </div>
         );
       })()}
@@ -6736,218 +7325,153 @@ FICHIER: src\services\api.js
 
 const API_BASE = "/api/v1";
 
-// ─── Constantes par défaut ───────────────────────────────────────────
-const CLUSTER   = "TestCluster";
-const KEYSPACE  = "edu_keyspace";
-const TABLE     = "edu_table";
+function extractError(err, fallback) {
+  const detail = err?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  const msg = detail.error ?? detail.message ?? JSON.stringify(detail);
+  const tip = detail.tip ? ` — ${detail.tip}` : "";
+  return msg + tip;
+}
 
-// ─── Nodes ───────────────────────────────────────────────────────────
-
-export async function addNode(name) {
+export async function addNode(name, clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/nodes/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, cluster_name: CLUSTER }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cluster_name: clusterName }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `addNode failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `addNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function removeNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `removeNode failed (${res.status})`);
-  }
+export async function removeNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}`, { method: "DELETE" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `removeNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function stopNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/stop`, {
-    method: "PUT",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `stopNode failed (${res.status})`);
-  }
+export async function stopNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}/stop`, { method: "PUT" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `stopNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function startNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/start`, {
-    method: "PUT",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `startNode failed (${res.status})`);
-  }
+export async function startNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}/start`, { method: "PUT" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `startNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getCluster() {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getCluster failed (${res.status})`);
-  }
+export async function getCluster(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getClusterStatus() {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/status`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getClusterStatus failed (${res.status})`);
-  }
+export async function getClusterStatus(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/status`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getClusterStatus failed (${res.status})`)); }
   return res.json();
 }
 
-export async function createCluster(nodeNames, partitioner = "Murmur3Partitioner") {
+export async function createCluster(nodeNames, partitioner = "Murmur3Partitioner", clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/cluster/create`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cluster_name: CLUSTER, nodes: nodeNames, partitioner }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cluster_name: clusterName, nodes: nodeNames, partitioner }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createCluster failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function deleteCluster() {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/delete`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `deleteCluster failed (${res.status})`);
-  }
+export async function deleteCluster(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/delete`, { method: "DELETE" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `deleteCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function changePartitioner(partitioner) {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/change-partitioner`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function changePartitioner(partitioner, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/change-partitioner`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partitioner }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `changePartitioner failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `changePartitioner failed (${res.status})`)); }
   return res.json();
 }
 
-// ─── Keyspace & Table (setup initial) ───────────────────────────────
+// ─── Keyspace & Table ────────────────────────────────────────────────
 
-export async function createKeyspace(replicationFactor = 1, strategy = "SimpleStrategy") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/keyspace`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keyspace_name: KEYSPACE, replication_factor: replicationFactor, strategy }),
+export async function createKeyspace(replicationFactor = 1, strategy = "SimpleStrategy", keyspaceName = "edu_keyspace", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/keyspace`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keyspace_name: keyspaceName, replication_factor: replicationFactor, strategy }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createKeyspace failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createKeyspace failed (${res.status})`)); }
   return res.json();
 }
 
-export async function createTable(columns, partitionKey) {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/table`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      table_name: TABLE,
-      columns,
-      partition_key: partitionKey,
-      clustering_key: [],
-    }),
+export async function createTable(columns, partitionKey, tableName = "edu_table", keyspaceName = "edu_keyspace", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/table`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table_name: tableName, columns, partition_key: partitionKey, clustering_key: [] }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createTable failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createTable failed (${res.status})`)); }
   return res.json();
 }
 
 // ─── Data ────────────────────────────────────────────────────────────
 
-export async function writeData(data, consistency = "QUORUM") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/insert`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function writeData(data, consistency = "QUORUM", keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/${tableName}/insert`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data, write_consistency: consistency }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `writeData failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `writeData failed (${res.status})`)); }
   return res.json();
 }
 
-export async function readData(filters = {}, consistency = "QUORUM") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/select`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function readData(filters = {}, consistency = "QUORUM", keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/${tableName}/select`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filters, read_consistency: consistency }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `readData failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `readData failed (${res.status})`)); }
   return res.json();
 }
 
 // ─── Token & Partitioning ────────────────────────────────────────────
 
-export async function getTokenRing() {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/ring`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getTokenRing failed (${res.status})`);
-  }
+export async function getTokenRing(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/ring`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getTokenRing failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getDistribution() {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/distribution`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getDistribution failed (${res.status})`);
-  }
+export async function getDistribution(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/distribution`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getDistribution failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getEndpoints(partitionKey) {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/endpoints`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function getEndpoints(partitionKey, keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/${keyspaceName}/${tableName}/endpoints`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partition_key: partitionKey }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getEndpoints failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getEndpoints failed (${res.status})`)); }
   return res.json();
 }
 
-export async function explainPartition(partitionKey) {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/explain`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function explainPartition(partitionKey, keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/${keyspaceName}/${tableName}/explain`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partition_key: partitionKey }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `explainPartition failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `explainPartition failed (${res.status})`)); }
+  return res.json();
+}
+
+export async function getGossip(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/gossip`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getGossip failed (${res.status})`)); }
   return res.json();
 }
 

@@ -1,3 +1,4 @@
+from cassandra.io.asyncioreactor import AsyncioConnection
 from cassandra.cluster import Cluster
 from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import SimpleStatement
@@ -73,12 +74,35 @@ def list_keyspaces(cluster_name: str):
 
 def create_table(cluster_name, keyspace_name, table_name, columns, partition_key, clustering_key=[]):
     session = get_session(cluster_name)
+
+    # ── Vérifie si la table existe déjà avec un schéma différent ──────────────
+    # Si les colonnes ne correspondent pas, on DROP et on recrée.
+    try:
+        existing_cols_rows = session.execute(
+            "SELECT column_name FROM system_schema.columns WHERE keyspace_name=%s AND table_name=%s",
+            [keyspace_name, table_name]
+        )
+        existing_cols = {row.column_name for row in existing_cols_rows}
+        wanted_cols = set(columns.keys())
+
+        if existing_cols and existing_cols != wanted_cols:
+            # Schéma différent → DROP + recreate
+            print(f"Schema mismatch for '{keyspace_name}.{table_name}': "
+                  f"existing={existing_cols}, wanted={wanted_cols}. Dropping and recreating.")
+            session.execute(f"DROP TABLE IF EXISTS {keyspace_name}.{table_name}")
+    except Exception as e:
+        # En cas d'erreur de lecture du schéma, on continue — le CREATE IF NOT EXISTS
+        # échouera proprement si nécessaire
+        print(f"Could not check existing schema: {e}")
+
+    # ── Crée la table (avec les bonnes colonnes) ───────────────────────────────
     columns_cql = ", ".join(f"{col} {dtype}" for col, dtype in columns.items())
     partition = f"({', '.join(partition_key)})" if len(partition_key) > 1 else partition_key[0]
     if clustering_key:
         primary_key = f"PRIMARY KEY ({partition}, {', '.join(clustering_key)})"
     else:
         primary_key = f"PRIMARY KEY ({partition})"
+
     cql = f"""
         CREATE TABLE IF NOT EXISTS {keyspace_name}.{table_name} (
             {columns_cql},
@@ -86,9 +110,14 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
         )
     """
     session.execute(cql)
-    print(f"Table '{keyspace_name}.{table_name}' created")
-    return {"keyspace": keyspace_name, "table": table_name, "columns": columns,
-            "partition_key": partition_key, "clustering_key": clustering_key}
+    print(f"Table '{keyspace_name}.{table_name}' created with columns: {list(columns.keys())}")
+    return {
+        "keyspace": keyspace_name,
+        "table": table_name,
+        "columns": columns,
+        "partition_key": partition_key,
+        "clustering_key": clustering_key
+    }
 
 
 def list_tables(cluster_name: str, keyspace_name: str):
