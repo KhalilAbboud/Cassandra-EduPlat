@@ -1,216 +1,151 @@
 const API_BASE = "/api/v1";
 
-// ─── Constantes par défaut ───────────────────────────────────────────
-const CLUSTER   = "TestCluster";
-const KEYSPACE  = "edu_keyspace";
-const TABLE     = "edu_table";
+function extractError(err, fallback) {
+  const detail = err?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  const msg = detail.error ?? detail.message ?? JSON.stringify(detail);
+  const tip = detail.tip ? ` — ${detail.tip}` : "";
+  return msg + tip;
+}
 
-// ─── Nodes ───────────────────────────────────────────────────────────
-
-export async function addNode(name) {
+export async function addNode(name, clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/nodes/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, cluster_name: CLUSTER }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, cluster_name: clusterName }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `addNode failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `addNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function removeNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `removeNode failed (${res.status})`);
-  }
+export async function removeNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}`, { method: "DELETE" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `removeNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function stopNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/stop`, {
-    method: "PUT",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `stopNode failed (${res.status})`);
-  }
+export async function stopNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}/stop`, { method: "PUT" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `stopNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function startNode(nodeName) {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}/${nodeName}/start`, {
-    method: "PUT",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `startNode failed (${res.status})`);
-  }
+export async function startNode(nodeName, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}/${nodeName}/start`, { method: "PUT" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `startNode failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getCluster() {
-  const res = await fetch(`${API_BASE}/nodes/${CLUSTER}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getCluster failed (${res.status})`);
-  }
+export async function getCluster(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/nodes/${clusterName}`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getClusterStatus() {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/status`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getClusterStatus failed (${res.status})`);
-  }
+export async function getClusterStatus(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/status`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getClusterStatus failed (${res.status})`)); }
   return res.json();
 }
 
-export async function createCluster(nodeNames, partitioner = "Murmur3Partitioner") {
+export async function createCluster(nodeNames, partitioner = "Murmur3Partitioner", clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/cluster/create`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cluster_name: CLUSTER, nodes: nodeNames, partitioner }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cluster_name: clusterName, nodes: nodeNames, partitioner }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createCluster failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function deleteCluster() {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/delete`, {
-    method: "DELETE",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `deleteCluster failed (${res.status})`);
-  }
+export async function deleteCluster(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/delete`, { method: "DELETE" });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `deleteCluster failed (${res.status})`)); }
   return res.json();
 }
 
-export async function changePartitioner(partitioner) {
-  const res = await fetch(`${API_BASE}/cluster/${CLUSTER}/change-partitioner`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function changePartitioner(partitioner, clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/cluster/${clusterName}/change-partitioner`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partitioner }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `changePartitioner failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `changePartitioner failed (${res.status})`)); }
   return res.json();
 }
 
-// ─── Keyspace & Table (setup initial) ───────────────────────────────
+// ─── Keyspace & Table ────────────────────────────────────────────────
 
-export async function createKeyspace(replicationFactor = 1, strategy = "SimpleStrategy") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/keyspace`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keyspace_name: KEYSPACE, replication_factor: replicationFactor, strategy }),
+export async function createKeyspace(replicationFactor = 1, strategy = "SimpleStrategy", keyspaceName = "edu_keyspace", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/keyspace`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keyspace_name: keyspaceName, replication_factor: replicationFactor, strategy }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createKeyspace failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createKeyspace failed (${res.status})`)); }
   return res.json();
 }
 
-export async function createTable(columns, partitionKey) {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/table`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      table_name: TABLE,
-      columns,
-      partition_key: partitionKey,
-      clustering_key: [],
-    }),
+export async function createTable(columns, partitionKey, tableName = "edu_table", keyspaceName = "edu_keyspace", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/table`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table_name: tableName, columns, partition_key: partitionKey, clustering_key: [] }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `createTable failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `createTable failed (${res.status})`)); }
   return res.json();
 }
 
 // ─── Data ────────────────────────────────────────────────────────────
 
-export async function writeData(data, consistency = "QUORUM") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/insert`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function writeData(data, consistency = "QUORUM", keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/${tableName}/insert`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data, write_consistency: consistency }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `writeData failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `writeData failed (${res.status})`)); }
   return res.json();
 }
 
-export async function readData(filters = {}, consistency = "QUORUM") {
-  const res = await fetch(`${API_BASE}/data/${CLUSTER}/${KEYSPACE}/${TABLE}/select`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function readData(filters = {}, consistency = "QUORUM", keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/data/${clusterName}/${keyspaceName}/${tableName}/select`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filters, read_consistency: consistency }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `readData failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `readData failed (${res.status})`)); }
   return res.json();
 }
 
 // ─── Token & Partitioning ────────────────────────────────────────────
 
-export async function getTokenRing() {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/ring`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getTokenRing failed (${res.status})`);
-  }
+export async function getTokenRing(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/ring`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getTokenRing failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getDistribution() {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/distribution`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getDistribution failed (${res.status})`);
-  }
+export async function getDistribution(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/distribution`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getDistribution failed (${res.status})`)); }
   return res.json();
 }
 
-export async function getEndpoints(partitionKey) {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/endpoints`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function getEndpoints(partitionKey, keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/${keyspaceName}/${tableName}/endpoints`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partition_key: partitionKey }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `getEndpoints failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getEndpoints failed (${res.status})`)); }
   return res.json();
 }
 
-export async function explainPartition(partitionKey) {
-  const res = await fetch(`${API_BASE}/token/${CLUSTER}/${KEYSPACE}/${TABLE}/explain`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+export async function explainPartition(partitionKey, keyspaceName = "edu_keyspace", tableName = "edu_table", clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/${keyspaceName}/${tableName}/explain`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ partition_key: partitionKey }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `explainPartition failed (${res.status})`);
-  }
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `explainPartition failed (${res.status})`)); }
+  return res.json();
+}
+
+export async function getGossip(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/gossip`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getGossip failed (${res.status})`)); }
   return res.json();
 }

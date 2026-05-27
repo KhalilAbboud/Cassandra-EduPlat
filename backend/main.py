@@ -4,8 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.cluster_routes import router as cluster_router
 from routes.node_routes import router as node_router
 from routes.data_routes import router as data_router
-from services.registryService import write_registry
 from routes.token_routes import router as token_router
+from routes.repair_routes import router as repair_router
+from services.registryService import write_registry
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,7 +29,8 @@ app.add_middleware(
 def root():
     return {"message": "Welcome to CassandraEdu API! Visit /docs for documentation."}
 
-app.include_router(node_router, prefix="/api/v1")
+app.include_router(node_router,    prefix="/api/v1")
 app.include_router(cluster_router, prefix="/api/v1")
-app.include_router(data_router, prefix="/api/v1")
-app.include_router(token_router, prefix="/api/v1")
+app.include_router(data_router,    prefix="/api/v1")
+app.include_router(token_router,   prefix="/api/v1")
+app.include_router(repair_router,  prefix="/api/v1")

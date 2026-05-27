@@ -48,10 +48,7 @@ function getPartitionerFromNodes(nodes) {
   for (const node of nodes) {
     if (!node.tokens || node.tokens.length === 0) continue;
     for (const tok of node.tokens) {
-      try {
-        const big = BigInt(String(tok));
-        return detectPartitioner(big);
-      } catch { /* skip */ }
+      try { return detectPartitioner(BigInt(String(tok))); } catch { /* skip */ }
     }
   }
   return "murmur3";
@@ -61,60 +58,40 @@ function darkenColor(hex, percent = 20) {
   if (!hex || !hex.startsWith('#')) return hex;
   let num = parseInt(hex.replace("#", ""), 16),
     amt = Math.round(2.55 * percent),
-    R = (num >> 16) - amt,
-    G = (num >> 8 & 0x00FF) - amt,
-    B = (num & 0x0000FF) - amt;
-  R = R < 0 ? 0 : R > 255 ? 255 : R;
-  G = G < 0 ? 0 : G > 255 ? 255 : G;
-  B = B < 0 ? 0 : B > 255 ? 255 : B;
+    R = Math.max(0, Math.min(255, (num >> 16) - amt)),
+    G = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) - amt)),
+    B = Math.max(0, Math.min(255, (num & 0x0000FF) - amt));
   return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
 const PALETTE = { x: 55, y: 645 };
-
-const NODE_COLORS = [
-  "#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a",
-  "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a",
-];
+const NODE_COLORS = ["#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a", "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a"];
 
 function makeMath(p) {
   const { MIN, RANGE } = p;
-
   function tokToAngle(tok) {
     const t = typeof tok === "bigint" ? tok : BigInt(String(tok));
     const shifted = t - MIN;
     const normalized = Number((shifted * 1_000_000n) / RANGE) / 1_000_000;
     return normalized * 2 * Math.PI - Math.PI / 2;
   }
-
   function angleToTok(angle) {
     const normalized = ((angle + Math.PI / 2) / (2 * Math.PI) + 1) % 1;
     const steps = BigInt(Math.round(normalized * 1_000_000_000));
     return MIN + (RANGE * steps / 1_000_000_000n);
   }
-
   function ringXY(tok) {
     const angle = tokToAngle(tok);
-    return {
-      x: CX + RING_R * Math.cos(angle),
-      y: CY + RING_R * Math.sin(angle),
-    };
+    return { x: CX + RING_R * Math.cos(angle), y: CY + RING_R * Math.sin(angle) };
   }
-
   return { tokToAngle, angleToTok, ringXY };
 }
 
-function distCenter(x, y) {
-  return Math.sqrt((x - CX) ** 2 + (y - CY) ** 2);
-}
+function distCenter(x, y) { return Math.sqrt((x - CX) ** 2 + (y - CY) ** 2); }
 
 function getPrimaryToken(node) {
-  if (node.tokens && node.tokens.length > 0) {
-    return BigInt(String(node.tokens[0]));
-  }
-  if (node.token != null) {
-    return typeof node.token === "bigint" ? node.token : BigInt(String(node.token));
-  }
+  if (node.tokens && node.tokens.length > 0) return BigInt(String(node.tokens[0]));
+  if (node.token != null) return typeof node.token === "bigint" ? node.token : BigInt(String(node.token));
   return 0n;
 }
 
@@ -122,31 +99,19 @@ function fmtToken(t) {
   const n = Number(t);
   if (!isFinite(n)) return String(t).slice(0, 12) + "…";
   if (Math.abs(n) > 1e15) return (n / 1e18).toFixed(1) + "e18";
-  if (Math.abs(n) > 1e35) return (n / 1e38).toFixed(1) + "e38";
   return String(t);
 }
 
-// Easing function: ease-out cubic
-function easeOut(t) {
-  return 1 - Math.pow(1 - t, 3);
-}
+function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
 export default function TokenRing({
-  nodes = [],
-  leavingNodes = [],
-  cluster = {},
-  nodeDataMap = {},
-  onAddNode,
-  onRemoveNode,
-  disabled = false,
-  simulationResult,
-  csvDistribution = [],
-  writeAnim = null,
-  gossipAnim = null,
+  nodes = [], leavingNodes = [], cluster = {}, nodeDataMap = {},
+  onAddNode, onRemoveNode, disabled = false,
+  csvDistribution = [], writeFlowAnim = null, gossipAnim = null,
+  hashingType = null,  
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
-
   const [palDragging, setPalDragging] = useState(false);
   const [ghostXY, setGhostXY] = useState(PALETTE);
   const [snapToken, setSnapToken] = useState(null);
@@ -156,85 +121,46 @@ export default function TokenRing({
   const hoverTimeoutRef = useRef(null);
   const hoverDelayRef = useRef(null);
   const isHoveringMenuRef = useRef(false);
-
-  // ── Animation state: for each csv point, track current animated position ──
-  // animPoints: Array of { id, x, y, targetX, targetY, done }
   const [animPoints, setAnimPoints] = useState([]);
-  const animFrameRef = useRef(null);
   const prevDistributionLengthRef = useRef(0);
 
-  const partitionerKey = useMemo(() => getPartitionerFromNodes(nodes), [nodes]);
+  const partitionerKey = useMemo(() => {
+  if (hashingType && PARTITIONERS[hashingType]) return hashingType;  // prop en priorité
+  return getPartitionerFromNodes(nodes);                              // fallback auto-detect
+}, [nodes, hashingType]);
   const partitioner = PARTITIONERS[partitionerKey];
   const { tokToAngle, angleToTok, ringXY } = useMemo(() => makeMath(partitioner), [partitioner]);
-
   const nodeColorMap = useMemo(() => {
     const map = {};
     nodes.forEach((n, i) => { map[n.id] = NODE_COLORS[i % NODE_COLORS.length]; });
     return map;
   }, [nodes]);
 
-  // ── When csvDistribution changes, animate each newly added point ──────────
   useEffect(() => {
     const prevLen = prevDistributionLengthRef.current;
     const newLen = csvDistribution.length;
-
-    // Reset animation when distribution is cleared
-    if (newLen === 0) {
-      prevDistributionLengthRef.current = 0;
-      setAnimPoints([]);
-      return;
-    }
-
-    // New points added since last render
+    if (newLen === 0) { prevDistributionLengthRef.current = 0; setAnimPoints([]); return; }
     if (newLen > prevLen) {
-      const ANIM_DURATION = 1200; // ms per point
-
       for (let i = prevLen; i < newLen; i++) {
         const row = csvDistribution[i];
         if (row.hash == null) continue;
-
         let targetX = CX, targetY = CY;
-        try {
-          const pos = ringXY(BigInt(String(row.hash)));
-          targetX = pos.x;
-          targetY = pos.y;
-        } catch { continue; }
-
+        try { const pos = ringXY(BigInt(String(row.hash))); targetX = pos.x; targetY = pos.y; } catch { continue; }
         const startTime = performance.now();
         const pointId = `${row.rowId}-${i}`;
-
-        // Add point starting from center
-        setAnimPoints(prev => [
-          ...prev,
-          { id: pointId, x: CX, y: CY, targetX, targetY, done: false }
-        ]);
-
-        // Animate it toward target
+        setAnimPoints(prev => [...prev, { id: pointId, x: CX, y: CY, targetX, targetY, done: false }]);
+        const ANIM_DURATION = 1200;
         const animate = (now) => {
-          const elapsed = now - startTime;
-          const t = Math.min(elapsed / ANIM_DURATION, 1);
+          const t = Math.min((now - startTime) / ANIM_DURATION, 1);
           const ease = easeOut(t);
-
           const x = CX + (targetX - CX) * ease;
           const y = CY + (targetY - CY) * ease;
           const done = t >= 1;
-
-          setAnimPoints(prev =>
-            prev.map(p =>
-              p.id === pointId
-                ? { ...p, x: done ? targetX : x, y: done ? targetY : y, done }
-                : p
-            )
-          );
-
-          if (!done) {
-            requestAnimationFrame(animate);
-          }
+          setAnimPoints(prev => prev.map(p => p.id === pointId ? { ...p, x: done ? targetX : x, y: done ? targetY : y, done } : p));
+          if (!done) requestAnimationFrame(animate);
         };
-
         requestAnimationFrame(animate);
       }
-
       prevDistributionLengthRef.current = newLen;
     }
   }, [csvDistribution, ringXY]);
@@ -243,10 +169,7 @@ export default function TokenRing({
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (W / rect.width),
-      y: (e.clientY - rect.top) * (H / rect.height),
-    };
+    return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
   }, []);
 
   const onPaletteMD = useCallback((e) => {
@@ -255,28 +178,19 @@ export default function TokenRing({
     setPalDragging(true);
     setGhostXY(getSvgXY(e));
     setSnapToken(null);
-
     const onMove = (ev) => {
       const { x, y } = getSvgXY(ev);
       setGhostXY({ x, y });
-      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) {
-        setSnapToken(angleToTok(Math.atan2(y - CY, x - CX)));
-      } else {
-        setSnapToken(null);
-      }
+      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) setSnapToken(angleToTok(Math.atan2(y - CY, x - CX)));
+      else setSnapToken(null);
     };
-
     const onUp = (ev) => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      setPalDragging(false);
-      setSnapToken(null);
+      setPalDragging(false); setSnapToken(null);
       const { x, y } = getSvgXY(ev);
-      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) {
-        onAddNode?.(angleToTok(Math.atan2(y - CY, x - CX)));
-      }
+      if (Math.abs(distCenter(x, y) - RING_R) < SNAP_THR) onAddNode?.(angleToTok(Math.atan2(y - CY, x - CX)));
     };
-
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [nodes, disabled, getSvgXY, onAddNode, angleToTok]);
@@ -284,9 +198,7 @@ export default function TokenRing({
   const onNodeEnter = useCallback((id, e) => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
-    setHoveredId(id);
-    setTooltipPx(getSvgXY(e));
-    setTooltipVisible(false);
+    setHoveredId(id); setTooltipPx(getSvgXY(e)); setTooltipVisible(false);
     hoverDelayRef.current = setTimeout(() => setTooltipVisible(true), 700);
   }, [getSvgXY]);
 
@@ -294,59 +206,39 @@ export default function TokenRing({
     if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
     hoverTimeoutRef.current = setTimeout(() => {
       if (isHoveringMenuRef.current) return;
-      setHoveredId(null);
-      setTooltipVisible(false);
+      setHoveredId(null); setTooltipVisible(false);
     }, 1200);
   }, []);
 
   const onMenuLeave = useCallback(() => {
     isHoveringMenuRef.current = false;
     if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredId(null);
-      setTooltipVisible(false);
-    }, 200);
+    hoverTimeoutRef.current = setTimeout(() => { setHoveredId(null); setTooltipVisible(false); }, 200);
   }, []);
 
   const sortedNodes = useMemo(() =>
-    [...nodes].sort((a, b) => {
-      const ta = getPrimaryToken(a);
-      const tb = getPrimaryToken(b);
-      return ta < tb ? -1 : ta > tb ? 1 : 0;
-    }), [nodes]);
+    [...nodes].sort((a, b) => { const ta = getPrimaryToken(a), tb = getPrimaryToken(b); return ta < tb ? -1 : ta > tb ? 1 : 0; }), [nodes]);
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", maxWidth: W, margin: "0 auto" }}>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
         style={{ width: "100%", height: "auto", display: "block", userSelect: "none" }}
-        onMouseLeave={() => { if (!palDragging) onNodeLeave(); }}
-      >
+        onMouseLeave={() => { if (!palDragging) onNodeLeave(); }}>
         <defs>
           <style>{`
             @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.1; } }
             @keyframes fadeOut { to { opacity: 0; transform: scale(1.3); } }
             .node-leaving { animation: fadeOut 0.6s ease forwards; }
-            @keyframes gossipRipple {
-              0% { r: 28; opacity: 0.6; stroke-width: 2; }
-              100% { r: 50; opacity: 0; stroke-width: 0.5; }
-            }
+            @keyframes gossipRipple { 0% { r: 28; opacity: 0.7; } 100% { r: 52; opacity: 0; } }
           `}</style>
-          <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.0)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.02)" />
-          </radialGradient>
         </defs>
 
-        {/* Ring - visible gray/white */}
+        {/* Ring */}
         <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(200,210,220,0.18)" strokeWidth={2.5} />
         <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
 
-        {/* Partitioner label */}
-        <text x={CX + RING_R + 10} y={CY - RING_R - 10}
-          fontSize={8} fill="rgba(255,255,255,0.2)" textAnchor="start">
+        <text x={CX + RING_R + 10} y={CY - RING_R - 10} fontSize={8} fill="rgba(255,255,255,0.2)" textAnchor="start">
           {partitioner.name}Partitioner
         </text>
 
@@ -358,12 +250,8 @@ export default function TokenRing({
           const ly = CY + (RING_R + 22) * Math.sin(angle);
           return (
             <g key={i}>
-              <line x1={x} y1={y}
-                x2={CX + (RING_R - 8) * Math.cos(angle)}
-                y2={CY + (RING_R - 8) * Math.sin(angle)}
-                stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
-              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-                fontSize={8} fill="rgba(255,255,255,0.15)">{tick.label}</text>
+              <line x1={x} y1={y} x2={CX + (RING_R - 8) * Math.cos(angle)} y2={CY + (RING_R - 8) * Math.sin(angle)} stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill="rgba(255,255,255,0.15)">{tick.label}</text>
             </g>
           );
         })}
@@ -374,8 +262,7 @@ export default function TokenRing({
           nodes.forEach(node => {
             if (node.status === "joining" || !node.tokens?.length) return;
             node.tokens.forEach(tok => {
-              try { allTokens.push({ tok: BigInt(String(tok)), nodeId: node.id }); }
-              catch { /* skip */ }
+              try { allTokens.push({ tok: BigInt(String(tok)), nodeId: node.id }); } catch { /* skip */ }
             });
           });
           if (allTokens.length < 2) return null;
@@ -391,234 +278,261 @@ export default function TokenRing({
             const start = { x: CX + RING_R * Math.cos(startAngle), y: CY + RING_R * Math.sin(startAngle) };
             const end = { x: CX + RING_R * Math.cos(endAngle), y: CY + RING_R * Math.sin(endAngle) };
             const large = delta > Math.PI ? 1 : 0;
-            const d = `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`;
-            return (
-              <path key={`vnode-arc-${entry.nodeId}-${String(entry.tok)}`}
-                d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.22}
-                style={{ pointerEvents: "none" }} />
-            );
+            return <path key={`arc-${entry.nodeId}-${String(entry.tok)}`} d={`M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`} fill="none" stroke={color} strokeWidth={8} opacity={0.22} style={{ pointerEvents: "none" }} />;
           });
         })()}
 
         {/* Token dots */}
-        {nodes.map((node) => {
+        {nodes.map(node => {
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           if (!node.tokens?.length || node.status === "joining") return null;
           return node.tokens.map((tok, i) => {
             try {
               const pos = ringXY(BigInt(String(tok)));
-              return (
-                <circle key={`tok-${node.id}-${i}`}
-                  cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5}
-                  fill={color} opacity={i === 0 ? 0.9 : 0.5}
-                  style={{ pointerEvents: "none" }} />
-              );
+              return <circle key={`tok-${node.id}-${i}`} cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5} fill={color} opacity={i === 0 ? 0.9 : 0.5} style={{ pointerEvents: "none" }} />;
             } catch { return null; }
           });
         })}
 
-        {animPoints.map((p) => (
+        {/* CSV anim points */}
+        {animPoints.map(p => (
           <g key={p.id} style={{ pointerEvents: "none" }}>
-            {/* Trail line from center while animating */}
-            {!p.done && (
-              <line
-                x1={CX} y1={CY} x2={p.x} y2={p.y}
-                stroke="#facc15" strokeWidth={1} opacity={0.2}
-                strokeDasharray="3 3"
-              />
-            )}
-            {/* The point itself */}
-            <circle
-              cx={p.x} cy={p.y}
-              r={p.done ? 3 : 4}
-              fill="#facc15"
-              stroke="#ca8a04"
-              strokeWidth={p.done ? 1 : 1.5}
-              opacity={p.done ? 0.75 : 1}
-            />
+            {!p.done && <line x1={CX} y1={CY} x2={p.x} y2={p.y} stroke="#facc15" strokeWidth={1} opacity={0.2} strokeDasharray="3 3" />}
+            <circle cx={p.x} cy={p.y} r={p.done ? 3 : 4} fill="#facc15" stroke="#ca8a04" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.75 : 1} />
           </g>
         ))}
 
-        {/* Simulation hash point */}
-        {simulationResult?.hash != null && (() => {
+        {/* Write flow animation */}
+        {writeFlowAnim && (() => {
           try {
-            const pos = ringXY(BigInt(String(simulationResult.hash)));
+            const { key: rawKey, hash, replicas, progress: p } = writeFlowAnim;
+            const hashBig = BigInt(String(hash));
+            const hashPos = ringXY(hashBig);
+            const hashLabel = String(hash).slice(0, 12) + (String(hash).length > 12 ? "…" : "");
+            const replicaColors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
+            const P1 = 0.2, P2 = 0.45, P3 = 0.65, P4 = 1.0;
+            const rawOpacity = p < P1 ? easeOut(p / P1) : p < P2 ? 1 - easeOut((p - P1) / (P2 - P1)) : 0;
+            const hashLabelOpacity = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : p < P3 ? 1 : 0;
+            const dotPhase = p < P2 ? 0 : p < P3 ? easeOut((p - P2) / (P3 - P2)) : 1;
+            const dotX = CX + (hashPos.x - CX) * dotPhase;
+            const dotY = CY + (hashPos.y - CY) * dotPhase;
+            const showDot = p >= P2 && p < P3;
+            const ringMarkerOpacity = p >= P3 ? Math.min((p - P3) / 0.05, 1) : 0;
+            const replicaPhase = p < P3 ? 0 : easeOut((p - P3) / (P4 - P3));
             return (
               <g style={{ pointerEvents: "none" }}>
-                <circle cx={pos.x} cy={pos.y} r={6} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
-                <text x={pos.x} y={pos.y - 14} textAnchor="middle" fontSize={9} fill="#facc15" fontWeight="700">
-                  hash:{String(simulationResult.hash).slice(0, 10)}…
-                </text>
+                {rawOpacity > 0 && (
+                  <g opacity={rawOpacity}>
+                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#0a0a14" stroke="rgba(250,204,21,0.4)" strokeWidth={1} />
+                    <text x={CX} y={CY - 4} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="rgba(255,255,255,0.5)" letterSpacing={1}>RAW KEY</text>
+                    <text x={CX} y={CY + 10} textAnchor="middle" dominantBaseline="middle" fontSize={12} fontWeight="700" fill="#facc15">"{rawKey}"</text>
+                  </g>
+                )}
+                {hashLabelOpacity > 0 && (
+                  <g opacity={hashLabelOpacity}>
+                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#0a0a14" stroke="rgba(56,189,248,0.5)" strokeWidth={1} />
+                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="rgba(255,255,255,0.4)" letterSpacing={2}>HASH(key)</text>
+                    <text x={CX} y={CY + 8} textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight="700" fill="#38bdf8">{hashLabel}</text>
+                  </g>
+                )}
+                {showDot && <line x1={CX} y1={CY} x2={dotX} y2={dotY} stroke="#38bdf8" strokeWidth={1.5} opacity={0.3} strokeDasharray="4 3" />}
+                {showDot && (
+                  <circle cx={dotX} cy={dotY} r={5} fill="#38bdf8" stroke="#0ea5e9" strokeWidth={1.5}>
+                    <animate attributeName="r" values="4;7;4" dur="0.5s" repeatCount="indefinite" />
+                  </circle>
+                )}
+                {ringMarkerOpacity > 0 && (
+                  <g opacity={ringMarkerOpacity}>
+                    <circle cx={hashPos.x} cy={hashPos.y} r={7} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
+                    <text x={hashPos.x} y={hashPos.y - 16} textAnchor="middle" fontSize={8} fill="#facc15" fontWeight="700">H({hashLabel.slice(0, 8)})</text>
+                  </g>
+                )}
+                {p >= P3 && replicas.map((replica, i) => {
+                  const nodePos = ringXY(getPrimaryToken(replica));
+                  const color = replicaColors[i % replicaColors.length];
+                  const rx = hashPos.x + (nodePos.x - hashPos.x) * replicaPhase;
+                  const ry = hashPos.y + (nodePos.y - hashPos.y) * replicaPhase;
+                  const done = replicaPhase >= 0.98;
+                  return (
+                    <g key={`flow-${i}`}>
+                      <line x1={hashPos.x} y1={hashPos.y} x2={rx} y2={ry} stroke={color} strokeWidth={1.5} opacity={0.4} strokeDasharray="3 2" />
+                      <circle cx={rx} cy={ry} r={done ? 5 : 6} fill={color} opacity={done ? 0.85 : 1}>
+                        {!done && <animate attributeName="r" values="4;7;4" dur="0.5s" repeatCount="indefinite" />}
+                      </circle>
+                      {done && <circle cx={nodePos.x} cy={nodePos.y} r={NODE_R + 4} fill="none" stroke={color} strokeWidth={2} opacity={0.6}><animate attributeName="opacity" values="0.6;0" dur="0.8s" fill="freeze" /><animate attributeName="r" from={NODE_R + 4} to={NODE_R + 18} dur="0.8s" fill="freeze" /></circle>}
+                      {i === 0 && done && <text x={nodePos.x} y={nodePos.y - NODE_R - 18} textAnchor="middle" fontSize={8} fill={color} fontWeight="700" opacity={0.9}>★ PRIMARY</text>}
+                    </g>
+                  );
+                })}
               </g>
             );
           } catch { return null; }
         })()}
 
-        {/* Simulation replica lines */}
-        {simulationResult?.replicas?.length > 0 && simulationResult.primaryNode && (() => {
-          const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
-          return simulationResult.replicas.map((replica, i) => {
-            try {
-              const hashPos = ringXY(BigInt(String(simulationResult.hash)));
-              const nodePos = ringXY(getPrimaryToken(replica));
-              return (
-                <line key={`sim-line-${i}`}
-                  x1={hashPos.x} y1={hashPos.y} x2={nodePos.x} y2={nodePos.y}
-                  stroke={colors[i % colors.length]} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}
-                  style={{ pointerEvents: "none" }} />
-              );
-            } catch { return null; }
-          });
-        })()}
-
-        {/* Write animation traveling dot */}
-        {writeAnim && (() => {
+        {/* ── Gossip animation en phases: SOURCE → INFO → PROPAGATION ── */}
+        {gossipAnim && (() => {
           try {
-            const fromPos = ringXY(BigInt(String(writeAnim.hash)));
-            writeAnim.targets.forEach(() => { });
-            return writeAnim.targets.map((target, i) => {
-              const toPos = ringXY(getPrimaryToken(target.node));
-              const t = target.progress ?? 0;
-              const cx = fromPos.x + (toPos.x - fromPos.x) * easeOut(t);
-              const cy = fromPos.y + (toPos.y - fromPos.y) * easeOut(t);
-              const colors = ["#3b82f6", "#22c55e", "#f59e0b"];
-              const color = colors[i % colors.length];
-              const done = t >= 1;
-              return (
-                <g key={`write-anim-${i}`} style={{ pointerEvents: "none" }}>
-                  <line x1={fromPos.x} y1={fromPos.y} x2={cx} y2={cy}
-                    stroke={color} strokeWidth={1.5} opacity={0.4} strokeDasharray="3 2" />
-                  <circle cx={cx} cy={cy} r={done ? 5 : 6}
-                    fill={color} opacity={done ? 0.8 : 1}>
-                    {!done && <animate attributeName="r" values="4;7;4" dur="0.6s" repeatCount="indefinite" />}
-                  </circle>
-                  {done && (
-                    <circle cx={toPos.x} cy={toPos.y} r={NODE_R + 4}
-                      fill="none" stroke={color} strokeWidth={2} opacity={0.5}>
-                      <animate attributeName="opacity" values="0.5;0" dur="0.8s" fill="freeze" />
-                      <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 16} dur="0.8s" fill="freeze" />
-                    </circle>
-                  )}
-                </g>
-              );
-            });
-          } catch { return null; }
-        })()}
+            const { from, to, fromData, toData, progress: p } = gossipAnim;
+            const fromPos = ringXY(getPrimaryToken(from));
+            const toPos = ringXY(getPrimaryToken(to));
 
-        {/* Gossip animation ripples */}
-        {gossipAnim && gossipAnim.map((g, gi) => {
-          // This renders the active gossip synchronization messages passing
-          // state metadata periodically between pairs of nodes on the ring.
-          try {
-            const fromPos = ringXY(getPrimaryToken(g.from));
-            const toPos = ringXY(getPrimaryToken(g.to));
-            const t = g.progress ?? 0;
-            const mx = fromPos.x + (toPos.x - fromPos.x) * easeOut(t);
-            const my = fromPos.y + (toPos.y - fromPos.y) * easeOut(t);
+            // Phases
+            const P1 = 0.25;  // Affiche le nœud source + ses infos gossip
+            const P2 = 0.55;  // Paquet voyage de from → to
+            const P3 = 1.0;   // Réception + ripple sur le nœud destinataire
+
+            // Phase 0→P1: label source apparait
+            const srcOpacity = p < P1 ? easeOut(p / P1) : p < P2 ? 1 - easeOut((p - P1) / (P2 - P1)) : 0;
+
+            // Phase P1→P2: paquet voyage
+            const travelPhase = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
+            const px2 = fromPos.x + (toPos.x - fromPos.x) * travelPhase;
+            const py2 = fromPos.y + (toPos.y - fromPos.y) * travelPhase;
+            const showPacket = p >= P1 && p < P2;
+
+            // Phase P2→P3: réception
+            const recvOpacity = p >= P2 ? easeOut((p - P2) / (P3 - P2)) : 0;
+            const showRipple = p >= P2;
+
+            const GOSSIP_COLOR = "#a78bfa";
+
             return (
-              <g key={`gossip-${gi}`} style={{ pointerEvents: "none" }}>
-                <line x1={fromPos.x} y1={fromPos.y} x2={mx} y2={my}
-                  stroke="#a78bfa" strokeWidth={1} opacity={0.3} strokeDasharray="2 3" />
-                <circle cx={mx} cy={my} r={3} fill="#a78bfa" opacity={0.9}>
-                  <animate attributeName="r" values="2;4;2" dur="0.4s" repeatCount="indefinite" />
-                </circle>
-                {t >= 1 && (
-                  <circle cx={toPos.x} cy={toPos.y} r={NODE_R}
-                    fill="none" stroke="#a78bfa" strokeWidth={1.5}
-                    style={{ animation: 'gossipRipple 0.5s ease-out forwards', transformOrigin: `${toPos.x}px ${toPos.y}px` }} />
+              <g style={{ pointerEvents: "none" }}>
+                {/* Phase 1 : label SOURCE avec heartbeat */}
+                {srcOpacity > 0 && (
+                  <g opacity={srcOpacity}>
+                    <rect
+                      x={fromPos.x - 60} y={fromPos.y - NODE_R - 48}
+                      width={120} height={40} rx={5}
+                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}66`} strokeWidth={1}
+                    />
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 38} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>GOSSIP FROM</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 24} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{from.id}</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 12} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.35)">
+                      gen:{fromData?.generation ?? "?"} · hb:{fromData?.heartbeat ?? "?"}
+                    </text>
+                  </g>
+                )}
+
+                {/* Ligne de trajet */}
+                {showPacket && (
+                  <line x1={fromPos.x} y1={fromPos.y} x2={px2} y2={py2}
+                    stroke={GOSSIP_COLOR} strokeWidth={1} opacity={0.25} strokeDasharray="3 3" />
+                )}
+
+                {/* Paquet gossip en voyage */}
+                {showPacket && (
+                  <g>
+                    <circle cx={px2} cy={py2} r={5} fill={GOSSIP_COLOR} opacity={0.9}>
+                      <animate attributeName="r" values="4;6;4" dur="0.4s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Label flottant sur le paquet */}
+                    <rect x={px2 - 28} y={py2 - 22} width={56} height={16} rx={3} fill="#0a0a14" opacity={0.85} />
+                    <text x={px2} y={py2 - 13} textAnchor="middle" fontSize={7} fill={GOSSIP_COLOR}>
+                      hb:{fromData?.heartbeat ?? "?"}
+                    </text>
+                  </g>
+                )}
+
+                {/* Phase 3 : réception sur le nœud destinataire */}
+                {showRipple && (
+                  <g opacity={recvOpacity}>
+                    {/* Ripple d'arrivée */}
+                    <circle cx={toPos.x} cy={toPos.y} r={NODE_R + 6}
+                      fill="none" stroke={GOSSIP_COLOR} strokeWidth={2}>
+                      <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 22} dur="0.7s" fill="freeze" />
+                      <animate attributeName="opacity" values="0.8;0" dur="0.7s" fill="freeze" />
+                    </circle>
+                    {/* Label destinataire avec info reçue */}
+                    <rect
+                      x={toPos.x - 65} y={toPos.y - NODE_R - 52}
+                      width={130} height={44} rx={5}
+                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}88`} strokeWidth={1.5}
+                    />
+                    <text x={toPos.x} y={toPos.y - NODE_R - 43} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>RECEIVED BY</text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 29} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{to.id}</text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 16} textAnchor="middle" fontSize={7.5} fill="#6af7b8">
+                      ✓ gen:{toData?.generation ?? "?"} · hb:{toData?.heartbeat ?? "?"}
+                    </text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 5} textAnchor="middle" fontSize={7} fill="rgba(255,255,255,0.3)">
+                      {toData?.status ?? ""} · {toData?.dc ?? ""}
+                    </text>
+                  </g>
+                )}
+
+                {/* Point d'arrivée fixe */}
+                {p >= P2 && (
+                  <circle cx={toPos.x} cy={toPos.y} r={5} fill={GOSSIP_COLOR} opacity={Math.min(recvOpacity, 0.8)} />
                 )}
               </g>
             );
           } catch { return null; }
-        })}
+        })()}
 
         {/* Nodes */}
-        {nodes.map((node) => {
+        {nodes.map(node => {
           const primaryTok = getPrimaryToken(node);
           const pos = ringXY(primaryTok);
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           const isHovered = hoveredId === node.id;
           const isDown = node.status === "down";
           const isJoining = node.status === "joining";
-          const isPrimary = simulationResult?.primaryNode?.id === node.id;
           const displayColor = isDown ? "#555" : color;
           const csvBadge = nodeDataMap[node.id]?.length ?? 0;
-
           const tokenRange = (() => {
             if (sortedNodes.length <= 1 || isJoining) return "";
             const idx = sortedNodes.findIndex(n => n.id === node.id);
             const prev = sortedNodes[(idx - 1 + sortedNodes.length) % sortedNodes.length];
             return `${fmtToken(getPrimaryToken(prev))} → ${fmtToken(primaryTok)}`;
           })();
+          // Highlight si ce nœud est actif dans le gossip
+          const isGossipActive = gossipAnim && (gossipAnim.from?.id === node.id || gossipAnim.to?.id === node.id);
 
           return (
-            <g key={node.id}
-              onMouseEnter={e => onNodeEnter(node.id, e)}
-              onMouseLeave={onNodeLeave}
-              style={{ cursor: isDown ? "not-allowed" : "pointer" }}
-            >
-              {isPrimary && (
-                <circle cx={pos.x} cy={pos.y} r={NODE_R + 8}
-                  fill="none" stroke="#3b82f6" strokeWidth={2} strokeDasharray="6 3" opacity={0.7} />
+            <g key={node.id} onMouseEnter={e => onNodeEnter(node.id, e)} onMouseLeave={onNodeLeave} style={{ cursor: isDown ? "not-allowed" : "pointer" }}>
+              {isGossipActive && (
+                <circle cx={pos.x} cy={pos.y} r={NODE_R + 6}
+                  fill="none" stroke="#a78bfa" strokeWidth={1.5} opacity={0.4} strokeDasharray="4 3" />
               )}
               {isJoining && (
                 <circle cx={pos.x} cy={pos.y} r={NODE_R + 10}
                   fill="none" stroke="#f7c76a" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6}
                   style={{ animation: "spin 3s linear infinite", transformOrigin: `${pos.x}px ${pos.y}px` }} />
               )}
-              <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={isDown ? "#13132a" : `${displayColor}22`}
-                stroke={displayColor} strokeWidth={isPrimary ? 2.5 : 1.5} />
-              {isJoining && (
-                <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                  fill="transparent" stroke={color} strokeWidth={1.5}
-                  strokeDasharray="5 5" opacity={0.4}
-                  style={{ animation: "pulse 2s ease-in-out infinite" }} />
-              )}
-              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800"
+              <circle cx={pos.x} cy={pos.y} r={NODE_R} fill={isDown ? "#13132a" : `${displayColor}22`} stroke={displayColor} strokeWidth={1.5} />
+              {isJoining && <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="transparent" stroke={color} strokeWidth={1.5} strokeDasharray="5 5" opacity={0.4} style={{ animation: "pulse 2s ease-in-out infinite" }} />}
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle" fontSize={16} fontWeight="800"
                 fill={isDown ? "#555" : darkenColor(displayColor, 20)}
                 stroke="#000" strokeWidth="2.5" paintOrder="stroke" strokeLinejoin="round"
                 style={{ pointerEvents: "none" }}>
                 {isJoining ? "⟳" : node.id.replace("Node", "")}
               </text>
-              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
-                fontSize={7} fontWeight="700"
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle" fontSize={7} fontWeight="700"
                 fill={isDown ? "#444" : darkenColor(displayColor, 25)}
                 stroke="#000" strokeWidth="1.5" paintOrder="stroke" strokeLinejoin="round"
                 style={{ pointerEvents: "none" }}>
                 {isJoining ? "" : node.id}
               </text>
-              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7} fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.25)"}
-                style={{ pointerEvents: "none" }}>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle" fontSize={7}
+                fill={isJoining ? "#f7c76a99" : "rgba(255,255,255,0.25)"} style={{ pointerEvents: "none" }}>
                 {isJoining ? "polling tokens..." : tokenRange}
               </text>
               {node.tokens?.length > 0 && !isJoining && (
                 <g style={{ pointerEvents: "none" }}>
                   <circle cx={pos.x - 17} cy={pos.y - 17} r={9} fill={`${color}88`} />
-                  <text x={pos.x - 17} y={pos.y - 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={7} fontWeight="bold" fill="white">
-                    {node.tokens.length}t
-                  </text>
+                  <text x={pos.x - 17} y={pos.y - 17} textAnchor="middle" dominantBaseline="middle" fontSize={7} fontWeight="bold" fill="white">{node.tokens.length}t</text>
                 </g>
               )}
               {csvBadge > 0 && (
                 <g style={{ pointerEvents: "none" }}>
                   <circle cx={pos.x + 17} cy={pos.y - 17} r={9} fill={color} />
-                  <text x={pos.x + 17} y={pos.y - 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={7.5} fontWeight="bold" fill="white">
-                    {csvBadge}
-                  </text>
+                  <text x={pos.x + 17} y={pos.y - 17} textAnchor="middle" dominantBaseline="middle" fontSize={7.5} fontWeight="bold" fill="white">{csvBadge}</text>
                 </g>
               )}
               {isHovered && tooltipVisible && !isJoining && (
-                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }}
-                  onMouseDown={e => e.stopPropagation()}
-                  style={{ cursor: "pointer" }}>
+                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()} style={{ cursor: "pointer" }}>
                   <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
-                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle"
-                    dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
                 </g>
               )}
             </g>
@@ -626,66 +540,37 @@ export default function TokenRing({
         })}
 
         {/* Leaving nodes */}
-        {leavingNodes.map((node) => {
+        {leavingNodes.map(node => {
           const pos = ringXY(getPrimaryToken(node));
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           return (
             <g key={`leaving-${node.id}`} style={{ pointerEvents: "none" }}>
-              <circle cx={pos.x} cy={pos.y} r={NODE_R}
-                fill={`${color}22`} stroke={color} strokeWidth={1.5} className="node-leaving" />
-              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12}
-                fill="none" stroke="#f76a6a" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} className="node-leaving" />
-              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle"
-                fontSize={16} fontWeight="800" fill={color} className="node-leaving">
-                {node.id.replace("Node", "")}
-              </text>
-              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle"
-                fontSize={7.5} fill="#f76a6a99" className="node-leaving">leaving...</text>
+              <circle cx={pos.x} cy={pos.y} r={NODE_R} fill={`${color}22`} stroke={color} strokeWidth={1.5} className="node-leaving" />
+              <circle cx={pos.x} cy={pos.y} r={NODE_R + 12} fill="none" stroke="#f76a6a" strokeWidth={1} strokeDasharray="4 3" opacity={0.6} className="node-leaving" />
+              <text x={pos.x} y={pos.y - 4} textAnchor="middle" dominantBaseline="middle" fontSize={16} fontWeight="800" fill={color} className="node-leaving">{node.id.replace("Node", "")}</text>
+              <text x={pos.x} y={pos.y + NODE_R + 13} textAnchor="middle" fontSize={7.5} fill="#f76a6a99" className="node-leaving">leaving...</text>
             </g>
           );
         })}
 
-        {/* Snap preview */}
         {snapToken !== null && (() => {
           const pos = ringXY(snapToken);
-          return (
-            <circle cx={pos.x} cy={pos.y} r={NODE_R}
-              fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3"
-              style={{ pointerEvents: "none" }} />
-          );
+          return <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="rgba(32,178,170,0.2)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="5 3" style={{ pointerEvents: "none" }} />;
         })()}
 
-        {/* Palette ghost */}
-        {palDragging && (
-          <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R}
-            fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5}
-            style={{ pointerEvents: "none" }} />
-        )}
+        {palDragging && <circle cx={ghostXY.x} cy={ghostXY.y} r={NODE_R} fill="rgba(32,178,170,0.5)" stroke="#20B2AA" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
 
-        {/* Palette */}
         {!palDragging && (
-          <g onMouseDown={onPaletteMD} style={{
-            cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab",
-            opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1
-          }}>
-            <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R}
-              fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
-            <text x={PALETTE.x} y={PALETTE.y} textAnchor="middle" dominantBaseline="middle"
-              fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
-            <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">
-              {nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}
-            </text>
+          <g onMouseDown={onPaletteMD} style={{ cursor: (nodes.length >= 6 || disabled) ? "not-allowed" : "grab", opacity: (nodes.length >= 6 || disabled) ? 0.3 : 1 }}>
+            <circle cx={PALETTE.x} cy={PALETTE.y} r={NODE_R} fill="rgba(32,178,170,0.15)" stroke="#20B2AA" strokeWidth={1.5} strokeDasharray="4 3" />
+            <text x={PALETTE.x} y={PALETTE.y} textAnchor="middle" dominantBaseline="middle" fontSize={22} fill="#20B2AA" fontWeight="300">+</text>
+            <text x={PALETTE.x} y={PALETTE.y + NODE_R + 14} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.3)">{nodes.length >= 6 ? "max 6 nodes" : disabled ? "wait..." : "drag to ring"}</text>
           </g>
         )}
 
-        {/* Center label */}
         <text x={CX} y={CY - 10} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.2)" letterSpacing={2}>TOKEN RING</text>
-        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">
-          {nodes.length} node{nodes.length !== 1 ? "s" : ""}
-        </text>
-        {nodes.length === 0 && (
-          <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>
-        )}
+        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">{nodes.length} node{nodes.length !== 1 ? "s" : ""}</text>
+        {nodes.length === 0 && <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>}
       </svg>
 
       {/* Tooltip */}
@@ -699,29 +584,13 @@ export default function TokenRing({
         const flipX = tooltipPx.x > ww * 0.65;
         const flipY = tooltipPx.y > wh * 0.70;
         const backendInfo = cluster[hoveredId];
-
         return (
           <div
-            onMouseEnter={() => {
-              isHoveringMenuRef.current = true;
-              if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-            }}
+            onMouseEnter={() => { isHoveringMenuRef.current = true; if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current); }}
             onMouseLeave={onMenuLeave}
-            style={{
-              position: "absolute",
-              left: tooltipPx.x + (flipX ? -240 : 20),
-              top: tooltipPx.y + (flipY ? -280 : 10),
-              width: 230, maxHeight: 320, overflowY: "auto",
-              background: "#0d0d1a",
-              border: `1px solid ${color}55`, borderLeft: `3px solid ${color}`,
-              borderRadius: 8, padding: "12px 14px", zIndex: 30,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-              fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace",
-            }}>
+            style={{ position: "absolute", left: tooltipPx.x + (flipX ? -240 : 20), top: tooltipPx.y + (flipY ? -280 : 10), width: 230, maxHeight: 320, overflowY: "auto", background: "#0d0d1a", border: `1px solid ${color}55`, borderLeft: `3px solid ${color}`, borderRadius: 8, padding: "12px 14px", zIndex: 30, boxShadow: "0 12px 40px rgba(0,0,0,0.6)", fontSize: 11, fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
             <div style={{ color, fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{node.id}</div>
-            <div style={{ color: `${color}99`, fontSize: 10, marginBottom: 4 }}>
-              {node.status ?? "up"} · {node.tokens?.length ?? 0} tokens · {partitioner.name}
-            </div>
+            <div style={{ color: `${color}99`, fontSize: 10, marginBottom: 4 }}>{node.status ?? "up"} · {node.tokens?.length ?? 0} tokens · {partitioner.name}</div>
             {backendInfo && (
               <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 9, marginBottom: 8, borderBottom: `1px solid ${color}22`, paddingBottom: 6 }}>
                 <div>IP: {backendInfo.ip || "—"}</div>
@@ -730,34 +599,24 @@ export default function TokenRing({
                 {node.tokens?.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ color: `${color}88`, marginBottom: 2 }}>Tokens ({node.tokens.length}):</div>
-                    {node.tokens.slice(0, 4).map((t, i) => (
-                      <div key={i} style={{ fontSize: 8, opacity: 0.7 }}>{String(t)}</div>
-                    ))}
-                    {node.tokens.length > 4 && (
-                      <div style={{ fontSize: 8, opacity: 0.5 }}>+{node.tokens.length - 4} more…</div>
-                    )}
+                    {node.tokens.slice(0, 4).map((t, i) => <div key={i} style={{ fontSize: 8, opacity: 0.7 }}>{String(t)}</div>)}
+                    {node.tokens.length > 4 && <div style={{ fontSize: 8, opacity: 0.5 }}>+{node.tokens.length - 4} more…</div>}
                   </div>
                 )}
               </div>
             )}
-            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, letterSpacing: 1, marginBottom: 5 }}>
-              DATA ({data.length} {data.length === 1 ? "entry" : "entries"})
-            </div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, letterSpacing: 1, marginBottom: 5 }}>DATA ({data.length} {data.length === 1 ? "entry" : "entries"})</div>
             {data.length === 0
               ? <div style={{ color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>no data stored</div>
               : data.map((item, i) => (
                 <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 3 }}>
                   <span style={{ color, minWidth: 0, flexShrink: 0, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.key}</span>
                   <span style={{ color: "rgba(255,255,255,0.25)" }}>→</span>
-                  <span style={{ color: "rgba(255,255,255,0.55)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {String(item.value).slice(0, 30)}{String(item.value).length > 30 ? "…" : ""}
-                  </span>
+                  <span style={{ color: "rgba(255,255,255,0.55)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(item.value).slice(0, 30)}{String(item.value).length > 30 ? "…" : ""}</span>
                 </div>
               ))
             }
-            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>
-              hover × to remove
-            </div>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.15)", fontSize: 9, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6 }}>hover × to remove</div>
           </div>
         );
       })()}
