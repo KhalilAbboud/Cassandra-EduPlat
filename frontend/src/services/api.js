@@ -9,6 +9,8 @@ function extractError(err, fallback) {
   return msg + tip;
 }
 
+// ─── Nodes ───────────────────────────────────────────────────────────
+
 export async function addNode(name, clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/nodes/`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -41,6 +43,8 @@ export async function getCluster(clusterName = "TestCluster") {
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getCluster failed (${res.status})`)); }
   return res.json();
 }
+
+// ─── Cluster ─────────────────────────────────────────────────────────
 
 export async function getClusterStatus(clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/cluster/${clusterName}/status`);
@@ -147,5 +151,23 @@ export async function explainPartition(partitionKey, keyspaceName = "edu_keyspac
 export async function getGossip(clusterName = "TestCluster") {
   const res = await fetch(`${API_BASE}/token/${clusterName}/gossip`);
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getGossip failed (${res.status})`)); }
+  return res.json();
+}
+
+// ─── Hinted Handoff ──────────────────────────────────────────────────
+// Response: { hints: [{target_node, key, mutation_ts, coordinator}], raw_tpstats: string }
+
+export async function getHints(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/hints`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getHints failed (${res.status})`)); }
+  return res.json();
+}
+
+// ─── Read Repair ─────────────────────────────────────────────────────
+// Response: { repairs: [{key, stale_node, repaired_at}], total_read_repairs: number }
+
+export async function getRepairStats(clusterName = "TestCluster") {
+  const res = await fetch(`${API_BASE}/token/${clusterName}/repair-stats`);
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getRepairStats failed (${res.status})`)); }
   return res.json();
 }

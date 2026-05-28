@@ -4,9 +4,8 @@ import {
   getCluster, deleteCluster,
   createKeyspace, createTable,
   getEndpoints, explainPartition, getGossip,
-  getHints, getRepairStats,
-  startNode,
-} from "./services/api";
+  getHints, getRepairStats,startNode
+  } from "./services/api";
 import TokenRing from "./components/TokenRing";
 import CAPErrorModal from "./components/CAPErrorModal";
 import HintedHandoffPanel from "./components/HintedHandoffPanel";
