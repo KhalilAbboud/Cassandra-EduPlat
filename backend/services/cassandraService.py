@@ -15,30 +15,45 @@ CONSISTENCY_MAP = {
     "ALL":    ConsistencyLevel.ALL,
 }
 
+def _ensure_backend_on_network(network_name: str):
+    """Attach the current backend container to the Cassandra cluster network if not already attached."""
+    import socket
+    hostname = socket.gethostname()
+    try:
+        backend_container = client.containers.get(hostname)
+        backend_networks = backend_container.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if network_name not in backend_networks:
+            network = client.networks.get(network_name)
+            network.connect(backend_container)
+            print(f"Backend attached to network {network_name}")
+    except Exception as e:
+        print(f"Could not attach backend to {network_name}: {e}")
+
+
 def get_session(cluster_name: str):
     network_name = f"cassandra-net-{cluster_name}"
     all_containers = client.containers.list(all=True)
+
+    # Ensure the backend container can reach the Cassandra cluster network
+    _ensure_backend_on_network(network_name)
 
     contact_points = []
     for c in all_containers:
         c.reload()
         networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
         if network_name in networks and c.status == "running":
-            ports = c.attrs.get("NetworkSettings", {}).get("Ports", {})
-            host_port_info = ports.get("9042/tcp")
-            if host_port_info:
-                hp = int(host_port_info[0]["HostPort"])
-                contact_points.append(hp)
+            ip = networks[network_name].get("IPAddress", "")
+            if ip:
+                contact_points.append(ip)
 
     if not contact_points:
         raise Exception(f"No running nodes found for cluster '{cluster_name}'")
 
-    first_port = contact_points[0]
-    print(f"Connecting to {cluster_name} via 127.0.0.1:{first_port}")
+    print(f"Connecting to {cluster_name} via {contact_points} :9042")
 
     cluster = Cluster(
-        contact_points=["127.0.0.1"],
-        port=first_port,
+        contact_points=contact_points,
+        port=9042,
         load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
         protocol_version=5,
         connect_timeout=30,
@@ -60,7 +75,7 @@ def create_keyspace(cluster_name, keyspace_name, replication_factor=1, strategy=
             CREATE KEYSPACE IF NOT EXISTS {keyspace_name}
             WITH replication = {{'class': 'NetworkTopologyStrategy', 'datacenter1': {replication_factor}}}
         """
-    session.execute(cql)
+    session.execute(cql, timeout=60.0)
     print(f"Keyspace '{keyspace_name}' created")
     return {"keyspace": keyspace_name, "strategy": strategy, "replication_factor": replication_factor}
 
@@ -82,14 +97,14 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
             "SELECT column_name FROM system_schema.columns WHERE keyspace_name=%s AND table_name=%s",
             [keyspace_name, table_name]
         )
-        existing_cols = {row.column_name for row in existing_cols_rows}
-        wanted_cols = set(columns.keys())
+        existing_cols = {row.column_name.lower() for row in existing_cols_rows}
+        wanted_cols = {k.lower() for k in columns.keys()}
 
         if existing_cols and existing_cols != wanted_cols:
             # Schéma différent → DROP + recreate
             print(f"Schema mismatch for '{keyspace_name}.{table_name}': "
                   f"existing={existing_cols}, wanted={wanted_cols}. Dropping and recreating.")
-            session.execute(f"DROP TABLE IF EXISTS {keyspace_name}.{table_name}")
+            session.execute(f"DROP TABLE IF EXISTS {keyspace_name}.{table_name}", timeout=60.0)
     except Exception as e:
         # En cas d'erreur de lecture du schéma, on continue — le CREATE IF NOT EXISTS
         # échouera proprement si nécessaire
@@ -109,7 +124,7 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
             {primary_key}
         )
     """
-    session.execute(cql)
+    session.execute(cql, timeout=60.0)
     print(f"Table '{keyspace_name}.{table_name}' created with columns: {list(columns.keys())}")
     return {
         "keyspace": keyspace_name,

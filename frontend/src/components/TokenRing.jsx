@@ -38,20 +38,24 @@ const PARTITIONERS = {
   },
 };
 
-function detectPartitioner(tokenVal) {
-  if (tokenVal < 0n) return "murmur3";
-  if (tokenVal > 9223372036854775807n) return "md5";
-  return "murmur3";
-}
-
 function getPartitionerFromNodes(nodes) {
+  let hasNegative = false;
+  let hasHuge = false;
+
   for (const node of nodes) {
     if (!node.tokens || node.tokens.length === 0) continue;
     for (const tok of node.tokens) {
-      try { return detectPartitioner(BigInt(String(tok))); } catch { /* skip */ }
+      try {
+        const val = BigInt(String(tok));
+        if (val < 0n) hasNegative = true;
+        if (val > 9223372036854775807n) hasHuge = true;
+      } catch { /* skip */ }
     }
   }
-  return "murmur3";
+
+  if (hasHuge) return "md5";
+  if (hasNegative) return "murmur3";
+  return null; // Ambiguous, fallback needed
 }
 
 function darkenColor(hex, percent = 20) {
@@ -108,7 +112,7 @@ export default function TokenRing({
   nodes = [], leavingNodes = [], cluster = {}, nodeDataMap = {},
   onAddNode, onRemoveNode, disabled = false,
   csvDistribution = [], writeFlowAnim = null, gossipAnim = null,
-  hashingType = null,  
+  hashingType = null,
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -125,10 +129,17 @@ export default function TokenRing({
   const prevDistributionLengthRef = useRef(0);
 
   const partitionerKey = useMemo(() => {
-  if (hashingType && PARTITIONERS[hashingType]) return hashingType;  // prop en priorité
-  return getPartitionerFromNodes(nodes);                              // fallback auto-detect
-}, [nodes, hashingType]);
-  const partitioner = PARTITIONERS[partitionerKey];
+    // If there are nodes in the cluster, we MUST use their actual partitioner math
+    // so they don't visually squish or snap to 0 degrees when the dropdown changes.
+    const activeNodes = nodes.filter(n => n.tokens && n.tokens.length > 0);
+    if (activeNodes.length > 0) {
+      return getPartitionerFromNodes(activeNodes);
+    }
+    // If the cluster is empty, use the dropdown's hashing type
+    if (hashingType && PARTITIONERS[hashingType]) return hashingType;
+    return "murmur3";
+  }, [nodes, hashingType]);
+  const partitioner = PARTITIONERS[partitionerKey] || PARTITIONERS["murmur3"];
   const { tokToAngle, angleToTok, ringXY } = useMemo(() => makeMath(partitioner), [partitioner]);
   const nodeColorMap = useMemo(() => {
     const map = {};
@@ -148,7 +159,11 @@ export default function TokenRing({
         try { const pos = ringXY(BigInt(String(row.hash))); targetX = pos.x; targetY = pos.y; } catch { continue; }
         const startTime = performance.now();
         const pointId = `${row.rowId}-${i}`;
-        setAnimPoints(prev => [...prev, { id: pointId, x: CX, y: CY, targetX, targetY, done: false }]);
+        setAnimPoints(prev => [...prev, {
+          id: pointId, x: CX, y: CY, targetX, targetY, done: false,
+          rawKey: String(row.partitionValue),
+          hashKey: "H(" + String(row.hash).slice(0, 6) + ")"
+        }]);
         const ANIM_DURATION = 1200;
         const animate = (now) => {
           const t = Math.min((now - startTime) / ANIM_DURATION, 1);
@@ -218,6 +233,42 @@ export default function TokenRing({
 
   const sortedNodes = useMemo(() =>
     [...nodes].sort((a, b) => { const ta = getPrimaryToken(a), tb = getPrimaryToken(b); return ta < tb ? -1 : ta > tb ? 1 : 0; }), [nodes]);
+
+  const nodePositions = useMemo(() => {
+    const posMap = {};
+    const placed = [];
+    // We sort by joining status so joining nodes get placed last and don't push stable nodes out of position
+    const nodesToPlace = [...nodes].sort((a, b) => (a.status === "joining" ? 1 : 0) - (b.status === "joining" ? 1 : 0));
+
+    nodesToPlace.forEach(node => {
+      const primaryTok = getPrimaryToken(node);
+      let { x, y } = ringXY(primaryTok);
+
+      let overlapping = true;
+      let attempt = 0;
+      const baseAngle = Math.atan2(y - CY, x - CX);
+
+      // If a node is within 2.2 radii of an already placed node, push it along the ring
+      while (overlapping && attempt < 20) {
+        overlapping = placed.some(p => Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2) < NODE_R * 2.2);
+        if (overlapping) {
+          attempt++;
+          // Shift left and right alternatingly: +1, -1, +2, -2, etc.
+          const shiftMultiplier = (attempt % 2 === 1 ? 1 : -1) * Math.ceil(attempt / 2);
+          // Angle offset to move roughly NODE_R * 2.2 along the ring circumference
+          const angleOffset = shiftMultiplier * ((NODE_R * 2.2) / RING_R);
+          const angle = baseAngle + angleOffset;
+          // Keep the radius exactly at RING_R so they stay ON the ring
+          x = CX + RING_R * Math.cos(angle);
+          y = CY + RING_R * Math.sin(angle);
+        }
+      }
+
+      posMap[node.id] = { x, y };
+      placed.push({ id: node.id, x, y });
+    });
+    return posMap;
+  }, [nodes, ringXY]);
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", maxWidth: W, margin: "0 auto" }}>
@@ -298,7 +349,13 @@ export default function TokenRing({
         {animPoints.map(p => (
           <g key={p.id} style={{ pointerEvents: "none" }}>
             {!p.done && <line x1={CX} y1={CY} x2={p.x} y2={p.y} stroke="#facc15" strokeWidth={1} opacity={0.2} strokeDasharray="3 3" />}
-            <circle cx={p.x} cy={p.y} r={p.done ? 3 : 4} fill="#facc15" stroke="#ca8a04" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.75 : 1} />
+            <circle cx={p.x} cy={p.y} r={p.done ? 5 : 8} fill="#facc15" stroke="#ca8a04" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.75 : 1} />
+            {!p.done && p.rawKey && (
+              <g transform={`translate(${p.x}, ${p.y - 16})`}>
+                <text x={0} y={-7} textAnchor="middle" fontSize={9} fill="#fff" fontWeight="700" opacity={0.9}>{p.rawKey}</text>
+                <text x={0} y={2} textAnchor="middle" fontSize={7.5} fill="#38bdf8" opacity={0.9}>{p.hashKey}</text>
+              </g>
+            )}
           </g>
         ))}
 
@@ -373,8 +430,8 @@ export default function TokenRing({
         {gossipAnim && (() => {
           try {
             const { from, to, fromData, toData, progress: p } = gossipAnim;
-            const fromPos = ringXY(getPrimaryToken(from));
-            const toPos = ringXY(getPrimaryToken(to));
+            const fromPos = nodePositions[from.id] || ringXY(getPrimaryToken(from));
+            const toPos = nodePositions[to.id] || ringXY(getPrimaryToken(to));
 
             // Phases
             const P1 = 0.25;  // Affiche le nœud source + ses infos gossip
@@ -472,7 +529,7 @@ export default function TokenRing({
         {/* Nodes */}
         {nodes.map(node => {
           const primaryTok = getPrimaryToken(node);
-          const pos = ringXY(primaryTok);
+          const pos = nodePositions[node.id] || ringXY(primaryTok);
           const color = nodeColorMap[node.id] ?? "#20B2AA";
           const isHovered = hoveredId === node.id;
           const isDown = node.status === "down";

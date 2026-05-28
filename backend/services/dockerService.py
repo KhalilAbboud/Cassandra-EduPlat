@@ -99,7 +99,7 @@ PARTITIONER_MAP = {
 
 # ─── Node operations ──────────────────────────────────────────────────────────
 
-def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = "Murmur3Partitioner"):
+def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = "Murmur3Partitioner", initial_token: str = None):
     network_name = f"cassandra-net-{cluster_name}"
 
     try:
@@ -122,17 +122,22 @@ def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = 
 
     partitioner_full = PARTITIONER_MAP.get(partitioner, PARTITIONER_MAP["Murmur3Partitioner"])
 
+    env = {
+        "CASSANDRA_CLUSTER_NAME": cluster_name,
+        "CASSANDRA_SEEDS": seed,
+        "CASSANDRA_PARTITIONER": partitioner_full,
+        "MAX_HEAP_SIZE": "512M",
+        "HEAP_NEWSIZE": "100M",
+        "CASSANDRA_RING_DELAY_MS": "5000",
+        "CASSANDRA_NUM_TOKENS": "1",
+    }
+    if initial_token:
+        env["CASSANDRA_INITIAL_TOKEN"] = initial_token
+
     container = client.containers.run(
         "cassandra:latest",
         name=node_name,
-        environment={
-            "CASSANDRA_CLUSTER_NAME": cluster_name,
-            "CASSANDRA_SEEDS": seed,
-            "CASSANDRA_PARTITIONER": partitioner_full,
-            "MAX_HEAP_SIZE": "512M",
-            "HEAP_NEWSIZE": "100M",
-            "CASSANDRA_RING_DELAY_MS": "5000",
-        },
+        environment=env,
         ports={"9042/tcp": host_port},
         mem_limit="1g",
         detach=True,
@@ -164,8 +169,18 @@ def get_nodes_in_network(cluster_name: str):
     network_name = f"cassandra-net-{cluster_name}"
     network = get_or_create_network(network_name)
     network.reload()
-    print(f"Nodes in {network_name}: {[container.name for container in network.containers]}")
-    return list(network.containers)
+    
+    import socket
+    hostname = socket.gethostname()
+    
+    nodes = []
+    for container in network.containers:
+        if container.id.startswith(hostname) or container.name == hostname:
+            continue
+        nodes.append(container)
+        
+    print(f"Nodes in {network_name}: {[c.name for c in nodes]}")
+    return nodes
 
 
 def delete_cassandra_node(node_name: str, cluster_name: str) -> bool:

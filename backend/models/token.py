@@ -4,6 +4,9 @@ from typing import List, Optional
 class EndpointsRequest(BaseModel):
     partition_key: str
 
+class BatchHashesRequest(BaseModel):
+    keys: List[str]
+
 class NodeEndpoint(BaseModel):
     ip: str
     node_name: str

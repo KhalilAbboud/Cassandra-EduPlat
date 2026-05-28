@@ -3,9 +3,9 @@ import {
   addNode, removeNode, writeData, readData,
   getCluster, deleteCluster,
   createKeyspace, createTable,
-  getEndpoints, explainPartition, getGossip,
-  getHints, getRepairStats,startNode
-  } from "./services/api";
+  getEndpoints, explainPartition, getGossip, getBatchHashes,
+  getHints, getRepairStats, startNode
+} from "./services/api";
 import TokenRing from "./components/TokenRing";
 import CAPErrorModal from "./components/CAPErrorModal";
 import HintedHandoffPanel from "./components/HintedHandoffPanel";
@@ -130,10 +130,11 @@ export default function App() {
 
   // ─── CAP Error Modal ──────────────────────────────────────────────
   const [capError, setCapError] = useState(null);
+  const [isCsvImporting, setIsCsvImporting] = useState(false);
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const SIDEBAR_W = 290;
+  const SIDEBAR_W = 340;
 
   const partitionKeys = useMemo(() => columns.filter(c => c.isPartitionKey).map(c => c.name), [columns]);
   const primaryPartitionKey = partitionKeys[0] ?? "";
@@ -161,9 +162,9 @@ export default function App() {
     } catch { /* ignore */ }
   }, [fetchClusterRaw]);
 
-  const addToNodeDataMap = useCallback((rowData, currentNodes, rf) => {
+  const addToNodeDataMap = useCallback((rowData, currentNodes, rf, explicitPlacement = null) => {
     const pkVal = rowData[primaryPartitionKey] ?? Object.values(rowData)[0] ?? "";
-    const placement = simulatePlacement({ key: String(pkVal), nodes: currentNodes, replicationFactor: rf, hashingType });
+    const placement = explicitPlacement ?? simulatePlacement({ key: String(pkVal), nodes: currentNodes, replicationFactor: rf, hashingType });
     if (!placement?.replicas?.length) return;
     setNodeDataMap(prev => {
       const next = { ...prev };
@@ -199,7 +200,7 @@ export default function App() {
         clusterInitializedRef.current = true;
         try { await deleteCluster(clusterName); } catch { /* may not exist */ }
       }
-      await addNode(id, clusterName);
+      await addNode(id, clusterName, String(token));
       const nodeInfo = await pollForTokens(id, fetchClusterRaw);
       setNodes(prev => prev.map(n => n.id === id && n.stamp === stamp
         ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? "" } : n));
@@ -261,14 +262,14 @@ export default function App() {
         const fromFront = aliveNodes.find(n => n.id === fromNode.node_name) ?? aliveNodes[0];
         const toFront = aliveNodes.find(n => n.id === toNode.node_name) ?? aliveNodes[1];
         if (!fromFront || !toFront || fromFront.id === toFront.id) return;
-        const TOTAL = 5000;
+        const TOTAL = 3500;
         const startTime = performance.now();
-        setGossipAnim({ from: fromFront, to: toFront, fromData: fromNode, toData: toNode, progress: 0 });
+        setGossipAnim({ from: fromFront, to: toFront, fromData: fromNode, toData: toNode, progress: 0, animId: Math.random() });
         const animate = (now) => {
           const t = Math.min((now - startTime) / TOTAL, 1);
           setGossipAnim(prev => prev ? { ...prev, progress: t } : null);
           if (t < 1) requestAnimationFrame(animate);
-          else setTimeout(() => setGossipAnim(null), 1200);
+          else setTimeout(() => setGossipAnim(null), 1000);
         };
         requestAnimationFrame(animate);
       } catch { /* silencieux */ }
@@ -309,13 +310,33 @@ export default function App() {
     try {
       const r = await writeData(rowValues, consistencyLevel, keyspaceName, tableName, clusterName);
       setOutput(r);
-      addToNodeDataMap(rowValues, nodes, replicationFactor);
+      
+      let backendPlacement = null;
+      try {
+        const hashesObj = await getBatchHashes([String(pkVal)]);
+        if (hashesObj[String(pkVal)] != null) {
+          backendPlacement = simulatePlacement({ 
+            key: String(pkVal), 
+            nodes, 
+            replicationFactor, 
+            precomputedHash: hashesObj[String(pkVal)] 
+          });
+        }
+      } catch (e) {
+        backendPlacement = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
+      }
+
+      addToNodeDataMap(rowValues, nodes, replicationFactor, backendPlacement);
+      if (backendPlacement) {
+        setCsvDistribution(prev => [...prev, { rowId: `manual_${Date.now()}`, partitionValue: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, row: rowValues }]);
+      }
+      
       fetchCluster();
-      const result = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
-      if (result?.hash != null && result.replicas?.length > 0) {
+      
+      if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
         const TOTAL_DURATION = 7000;
         const startTime = performance.now();
-        setWriteFlowAnim({ key: String(pkVal), hash: result.hash, replicas: result.replicas, progress: 0 });
+        setWriteFlowAnim({ key: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, progress: 0 });
         const animateFlow = (now) => {
           const t = Math.min((now - startTime) / TOTAL_DURATION, 1);
           setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
@@ -367,7 +388,7 @@ export default function App() {
       }
     }
   }, [consistencyLevel, keyspaceName, tableName, clusterName, nodes, primaryPartitionKey,
-      csvDistribution, replicationFactor, hashingType, nodeDataMap]);
+    csvDistribution, replicationFactor, hashingType, nodeDataMap]);
 
   const parseCsvMeta = useCallback((text) => {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -414,6 +435,22 @@ export default function App() {
     const errors = [];
     setCsvDistribution([]); setNodeDataMap({});
 
+    // Pre-calculate hashes in one ultra-fast batch request
+    const uniqueKeys = [...new Set(dataLines.map(line => {
+      const parts = line.split(delim).map(c => c.trim());
+      return parts[headers.indexOf(pkCol)];
+    }).filter(Boolean))];
+    
+    let hashesObj = {};
+    try {
+      hashesObj = await getBatchHashes(uniqueKeys);
+    } catch (e) {
+      console.error("Batch hash failed", e);
+    }
+
+    // Scale animation speed based on CSV size to prevent massive delays
+    const animDuration = dataLines.length > 50 ? 80 : (dataLines.length > 15 ? 150 : 400);
+
     for (let i = 0; i < dataLines.length; i++) {
       const line = dataLines[i];
       if (!line.trim()) continue;
@@ -425,37 +462,38 @@ export default function App() {
       try {
         await writeData(row, consistencyLevel, ksName, tblName, clusterName);
         imported++;
-        const placement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
-        if (placement?.hash != null && placement.replicas?.length > 0) {
-          const ANIM_DURATION = 1200;
-          const startTime = performance.now();
-          setWriteFlowAnim({ key: String(pval), hash: placement.hash, replicas: placement.replicas, progress: 0 });
-          await new Promise(res => {
-            const tick = (now) => {
-              const t = Math.min((now - startTime) / ANIM_DURATION, 1);
-              setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
-              if (t < 1) requestAnimationFrame(tick); else res();
-            };
-            requestAnimationFrame(tick);
+        
+        let backendPlacement = null;
+        if (hashesObj[String(pval)] != null) {
+          backendPlacement = simulatePlacement({ 
+            key: String(pval), 
+            nodes, 
+            replicationFactor, 
+            precomputedHash: hashesObj[String(pval)] 
           });
-          setWriteFlowAnim(null);
-          setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: placement.hash, replicas: placement.replicas, row }]);
-          addToNodeDataMap(row, nodes, replicationFactor);
+        } else {
+          backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
+        }
+
+        if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
+          await new Promise(res => setTimeout(res, animDuration));
+          setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row }]);
+          addToNodeDataMap(row, nodes, replicationFactor, backendPlacement);
         }
       } catch (err) {
         skipped++;
         errors.push(`row ${i + 1} (${pval}): ${err.message}`);
       }
-      if (i < dataLines.length - 1) await new Promise(res => setTimeout(res, 100));
     }
     return { imported, skipped, errors };
   }, [consistencyLevel, clusterName, nodes, replicationFactor, hashingType, addToNodeDataMap]);
 
   const onImportCsv = useCallback(async () => {
-    if (!csvFile)           { setCsvError("Choose a CSV file first."); return; }
-    if (!partitionKey)      { setCsvError("Choose a partition key."); return; }
+    if (!csvFile) { setCsvError("Choose a CSV file first."); return; }
+    if (!partitionKey) { setCsvError("Choose a partition key."); return; }
     if (nodes.length === 0) { setCsvError("Add nodes to the ring first."); return; }
     setCsvError("");
+    setIsCsvImporting(true);
 
     try {
       const text = await csvFile.text();
@@ -500,9 +538,10 @@ export default function App() {
       setCsvImportResult({ real: true, mode: "auto", rows_imported: imported, rows_skipped: skipped, errors: errors.slice(0, 5), partition_key: partitionKey, columns_detected: headers });
       setOutput({ real_import: true, mode: "auto_schema", rows_imported: imported, rows_skipped: skipped, schema_created: `${keyspaceName}.${tableName}` });
     } catch (err) { setCsvError(`Import error: ${err.message}`); }
+    finally { setIsCsvImporting(false); }
   }, [csvFile, partitionKey, parseCsvMeta, nodes, replicationFactor, hashingType,
-      schemaReady, columns, consistencyLevel, keyspaceName, tableName, strategy, clusterName,
-      runCsvInsertLoop, fetchCluster]);
+    schemaReady, columns, consistencyLevel, keyspaceName, tableName, strategy, clusterName,
+    runCsvInsertLoop, fetchCluster]);
 
   // ─── Derived state for right panel badge ──────────────────────────
   const downNodeCount = nodes.filter(n => n.status !== "up" && n.status !== "joining").length;
@@ -570,17 +609,6 @@ export default function App() {
               <Section title="Setup">
                 <label style={lbl}>Keyspace Name</label>
                 <input style={inp} value={keyspaceName} onChange={e => { setKeyspaceName(e.target.value); setSchemaReady(false); }} placeholder="edu_keyspace" />
-                <label style={lbl}>Strategy</label>
-                <select style={inp} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
-                  <option value="SimpleStrategy">SimpleStrategy</option>
-                  <option value="NetworkTopologyStrategy">NetworkTopologyStrategy</option>
-                </select>
-                <label style={lbl}>Replication Factor</label>
-                <select style={inp} value={replicationFactor} onChange={e => { setReplicationFactor(Number(e.target.value)); setSchemaReady(false); }}>
-                  <option value={1}>RF = 1</option>
-                  <option value={2}>RF = 2</option>
-                  <option value={3}>RF = 3</option>
-                </select>
                 <label style={lbl}>Table Name</label>
                 <input style={inp} value={tableName} onChange={e => { setTableName(e.target.value); setSchemaReady(false); }} placeholder="edu_table" />
                 <label style={lbl}>Columns</label>
@@ -662,6 +690,33 @@ export default function App() {
                 {!schemaReady && (
                   <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 8, fontStyle: "italic" }}>Complete Setup first.</div>
                 )}
+
+                <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Consistency</label>
+                    <select style={{ ...inp, marginBottom: 0 }} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
+                      <option value="ONE">ONE</option>
+                      <option value="QUORUM">QUORUM</option>
+                      <option value="ALL">ALL</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Strategy</label>
+                    <select style={{ ...inp, marginBottom: 0 }} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
+                      <option value="SimpleStrategy">Simple</option>
+                      <option value="NetworkTopologyStrategy">Network</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Rep Factor</label>
+                    <select style={{ ...inp, marginBottom: 0 }} value={replicationFactor} onChange={e => { setReplicationFactor(Number(e.target.value)); setSchemaReady(false); }}>
+                      <option value={1}>RF = 1</option>
+                      <option value={2}>RF = 2</option>
+                      <option value={3}>RF = 3</option>
+                    </select>
+                  </div>
+                </div>
+
                 <Tabs
                   tabs={[{ id: "manual", label: "Manual" }, { id: "csv", label: "CSV Import" }]}
                   active={dataTab}
@@ -670,12 +725,6 @@ export default function App() {
 
                 {dataTab === "manual" && (
                   <>
-                    <label style={lbl}>Consistency Level</label>
-                    <select style={inp} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
-                      <option value="ONE">ONE</option>
-                      <option value="QUORUM">QUORUM</option>
-                      <option value="ALL">ALL</option>
-                    </select>
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 2 }}>WRITE</div>
                     {schemaReady ? (
                       columns.map(col => (
@@ -720,10 +769,12 @@ export default function App() {
 
                 {dataTab === "csv" && (
                   <>
-                    <div style={{ fontSize: 9, marginBottom: 8, padding: "4px 8px", borderRadius: 4,
+                    <div style={{
+                      fontSize: 9, marginBottom: 8, padding: "4px 8px", borderRadius: 4,
                       background: schemaReady ? "rgba(106,247,184,0.07)" : "rgba(247,198,106,0.07)",
                       border: schemaReady ? "1px solid rgba(106,247,184,0.2)" : "1px solid rgba(247,198,106,0.2)",
-                      color: schemaReady ? "#6af7b8" : "#f7c76a", lineHeight: 1.6 }}>
+                      color: schemaReady ? "#6af7b8" : "#f7c76a", lineHeight: 1.6
+                    }}>
                       {schemaReady
                         ? `Mode B — inserting into ${keyspaceName}.${tableName} · CSV headers must match table columns exactly`
                         : `Mode A — CSV headers will auto-create keyspace & table (all columns as text)`}
@@ -752,16 +803,30 @@ export default function App() {
                         </select>
                       </>
                     )}
+                    <style>
+                      {`
+                        @keyframes pulseOrange {
+                          0% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
+                          50% { background: rgba(247,198,106,0.4); border-color: rgba(247,198,106,1); box-shadow: 0 0 15px rgba(247,198,106,0.6); }
+                          100% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
+                        }
+                      `}
+                    </style>
                     <button
                       style={{
                         ...btn,
-                        background: csvFile && partitionKey && nodes.length > 0 ? "rgba(32,178,170,0.15)" : "rgba(255,255,255,0.03)",
-                        border: csvFile && partitionKey && nodes.length > 0 ? `1px solid ${ACCENT}` : BORDER,
-                        color: csvFile && partitionKey && nodes.length > 0 ? ACCENT : "rgba(255,255,255,0.3)",
+                        background: isCsvImporting ? "rgba(247,198,106,0.2)" : (csvFile && partitionKey && nodes.length > 0 ? "rgba(32,178,170,0.15)" : "rgba(255,255,255,0.03)"),
+                        border: isCsvImporting ? "1px solid #f7c76a" : (csvFile && partitionKey && nodes.length > 0 ? `1px solid ${ACCENT}` : BORDER),
+                        color: isCsvImporting ? "#f7c76a" : (csvFile && partitionKey && nodes.length > 0 ? ACCENT : "rgba(255,255,255,0.3)"),
                         fontWeight: 700,
+                        animation: isCsvImporting ? "pulseOrange 1.5s infinite ease-in-out" : "none",
+                        transition: isCsvImporting ? "none" : "background 0.15s, border-color 0.15s, color 0.15s",
                       }}
                       onClick={onImportCsv}
-                    >{schemaReady ? "Import CSV" : "Import & Auto-Create Schema"}</button>
+                      disabled={isCsvImporting}
+                    >
+                      {isCsvImporting ? "⏳ Importing..." : (schemaReady ? "Import CSV" : "Import & Auto-Create Schema")}
+                    </button>
                     {csvError && (
                       <div style={{ background: "rgba(247,106,106,0.08)", border: "1px solid rgba(247,106,106,0.3)", borderRadius: 5, padding: "6px 8px", fontSize: 10, color: "#f76a6a", marginBottom: 4 }}>⚠ {csvError}</div>
                     )}
@@ -852,7 +917,7 @@ export default function App() {
             <div style={{ display: "flex", gap: 2, marginBottom: 10, borderBottom: "1px solid rgba(32,178,170,0.15)" }}>
               {[
                 { id: "output", label: "Output" },
-                { id: "hints",  label: downNodeCount > 0 ? `⚡ Hints (${downNodeCount} down)` : "⚡ Hints" },
+                { id: "hints", label: downNodeCount > 0 ? `⚡ Hints (${downNodeCount} down)` : "⚡ Hints" },
                 { id: "repair", label: "🔍 Read Repair" },
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}

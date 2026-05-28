@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from models.token import (
     EndpointsRequest, EndpointsResponse,
-    RingResponse, DistributionResponse
+    RingResponse, DistributionResponse,
+    BatchHashesRequest
 )
 from services.tokenService import get_endpoints, get_token_ring, get_data_distribution, explain_partition
+import mmh3
 from services.dockerService import client
 
 router = APIRouter(prefix="/token", tags=["Token & Partitioning"])
@@ -44,6 +46,14 @@ def explain(cluster_name: str, keyspace: str, table: str, body: EndpointsRequest
     try:
         result = explain_partition(cluster_name, keyspace, table, body.partition_key)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/hashes")
+def batch_hashes(body: BatchHashesRequest):
+    try:
+        return {k: str(mmh3.hash64(k, signed=True)[0]) for k in body.keys}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

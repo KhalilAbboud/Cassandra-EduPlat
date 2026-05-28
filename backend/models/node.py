@@ -3,6 +3,7 @@ from enum import Enum
 class NodeCreate(BaseModel):
     name: str
     cluster_name: str
+    initial_token: str | None = None
 
 class NodeStatus(str, Enum):
     UP = "UP"

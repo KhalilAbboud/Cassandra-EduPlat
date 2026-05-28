@@ -11,10 +11,10 @@ function extractError(err, fallback) {
 
 // ─── Nodes ───────────────────────────────────────────────────────────
 
-export async function addNode(name, clusterName = "TestCluster") {
+export async function addNode(name, clusterName = "TestCluster", initial_token = null) {
   const res = await fetch(`${API_BASE}/nodes/`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, cluster_name: clusterName }),
+    body: JSON.stringify({ name, cluster_name: clusterName, initial_token }),
   });
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `addNode failed (${res.status})`)); }
   return res.json();
@@ -158,8 +158,17 @@ export async function getGossip(clusterName = "TestCluster") {
 // Response: { hints: [{target_node, key, mutation_ts, coordinator}], raw_tpstats: string }
 
 export async function getHints(clusterName = "TestCluster") {
-  const res = await fetch(`${API_BASE}/token/${clusterName}/hints`);
+  const res = await fetch(`${API_BASE}/repair/${clusterName}/hints`);
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getHints failed (${res.status})`)); }
+  return res.json();
+}
+
+export async function getBatchHashes(keys) {
+  const res = await fetch(`${API_BASE}/token/hashes`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keys }),
+  });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getBatchHashes failed (${res.status})`)); }
   return res.json();
 }
 
@@ -167,7 +176,7 @@ export async function getHints(clusterName = "TestCluster") {
 // Response: { repairs: [{key, stale_node, repaired_at}], total_read_repairs: number }
 
 export async function getRepairStats(clusterName = "TestCluster") {
-  const res = await fetch(`${API_BASE}/token/${clusterName}/repair-stats`);
+  const res = await fetch(`${API_BASE}/repair/${clusterName}/repair-stats`);
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getRepairStats failed (${res.status})`)); }
   return res.json();
 }

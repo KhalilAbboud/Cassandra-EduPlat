@@ -24,10 +24,10 @@ export function hashKey(key) {
   return h * (MURMUR3_RANGE / MOD32) + MURMUR3_MIN;
 }
 
-export function simulatePlacement({ key, nodes, replicationFactor }) {
+export function simulatePlacement({ key, nodes, replicationFactor, precomputedHash }) {
   if (!key || nodes.length === 0) return null;
 
-  const hash = hashKey(key);
+  const hash = precomputedHash != null ? BigInt(precomputedHash) : hashKey(key);
   const aliveNodes = nodes.filter(n => n.status === "up" && n.tokens?.length > 0);
 
   if (aliveNodes.length === 0) {
