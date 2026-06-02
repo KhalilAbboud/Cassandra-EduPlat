@@ -4,7 +4,7 @@ import {
   getCluster, deleteCluster,
   createKeyspace, createTable,
   getEndpoints, explainPartition, getGossip, getBatchHashes,
-  getHints, getRepairStats, startNode
+  getHints, getRepairStats, startNode, stopNode
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
 import CAPErrorModal from "./components/CAPErrorModal";
@@ -221,6 +221,18 @@ export default function App() {
     try { await removeNode(nodeId, clusterName); await fetchCluster(); } catch (e) { console.error("removeNode failed", e); }
   }, [clusterName, fetchCluster, nodes]);
 
+  // ─── handleStopNode: stop container without deleting (for hint/repair testing) ─
+  const handleStopNode = useCallback(async (nodeId) => {
+    try {
+      await stopNode(nodeId, clusterName);
+      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: "down" } : n));
+      await fetchCluster();
+    } catch (e) {
+      console.error("stopNode failed", e);
+      setOutput({ error: `Stop failed: ${e.message}` });
+    }
+  }, [clusterName, fetchCluster]);
+
   // ─── handleStartNode: restart a stopped node + re-sync frontend state ────
   const handleStartNode = useCallback(async (nodeId, clusterNameArg) => {
     try {
@@ -313,7 +325,7 @@ export default function App() {
       
       let backendPlacement = null;
       try {
-        const hashesObj = await getBatchHashes([String(pkVal)]);
+        const hashesObj = await getBatchHashes([String(pkVal)], hashingType);
         if (hashesObj[String(pkVal)] != null) {
           backendPlacement = simulatePlacement({ 
             key: String(pkVal), 
@@ -443,7 +455,7 @@ export default function App() {
     
     let hashesObj = {};
     try {
-      hashesObj = await getBatchHashes(uniqueKeys);
+      hashesObj = await getBatchHashes(uniqueKeys, hashingType);
     } catch (e) {
       console.error("Batch hash failed", e);
     }
@@ -594,15 +606,15 @@ export default function App() {
                     ↵ Press Enter or click away to apply — will reset session
                   </div>
                 )}
-                <label style={lbl}>Hashing Type</label>
+                <label style={lbl}>Partitioner</label>
                 <select style={inp} value={hashingType} onChange={e => setHashingType(e.target.value)}>
-                  <option value="murmur3">Murmur3 (default)</option>
-                  <option value="md5">MD5</option>
-                  <option value="fnv1a">FNV-1a</option>
-                  <option value="xxhash">xxHash</option>
+                  <option value="murmur3">Murmur3Partitioner (default)</option>
+                  <option value="md5">RandomPartitioner (MD5)</option>
+                  <option value="fnv1a">FNV-1a (Simulated)</option>
+                  <option value="xxhash">xxHash (Simulated)</option>
                 </select>
                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", lineHeight: 1.5, fontStyle: "italic" }}>
-                  Drag the ring to add nodes.
+                  Affects how partition keys are hashed to tokens. Drag the ring to add nodes.
                 </div>
               </Section>
 
@@ -875,7 +887,8 @@ export default function App() {
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
             <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
             <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
-            <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
+            <span><strong style={{ color: "#f59e0b" }}>🛑 stop</strong> → simulate failure</span>
+            <span><strong style={{ color: "#f76a6a" }}>× remove</strong> → delete node</span>
           </div>
 
           {replicatedNodes.length > 0 && (
@@ -905,6 +918,7 @@ export default function App() {
             <TokenRing
               nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
               nodeDataMap={nodeDataMap} onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
+              onStopNode={handleStopNode}
               csvDistribution={csvDistribution} disabled={anyJoining}
               writeFlowAnim={writeFlowAnim} gossipAnim={gossipAnim}
               hashingType={hashingType}

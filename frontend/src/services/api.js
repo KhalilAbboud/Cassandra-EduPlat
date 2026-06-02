@@ -163,10 +163,10 @@ export async function getHints(clusterName = "TestCluster") {
   return res.json();
 }
 
-export async function getBatchHashes(keys) {
+export async function getBatchHashes(keys, hashingType = "murmur3") {
   const res = await fetch(`${API_BASE}/token/hashes`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keys }),
+    body: JSON.stringify({ keys, hashing_type: hashingType }),
   });
   if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(extractError(err, `getBatchHashes failed (${res.status})`)); }
   return res.json();

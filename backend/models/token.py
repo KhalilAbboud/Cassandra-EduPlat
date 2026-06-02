@@ -6,6 +6,7 @@ class EndpointsRequest(BaseModel):
 
 class BatchHashesRequest(BaseModel):
     keys: List[str]
+    hashing_type: str = "murmur3"  # "murmur3" or "md5"
 
 class NodeEndpoint(BaseModel):
     ip: str

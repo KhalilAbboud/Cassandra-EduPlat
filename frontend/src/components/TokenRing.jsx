@@ -110,7 +110,7 @@ function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
 export default function TokenRing({
   nodes = [], leavingNodes = [], cluster = {}, nodeDataMap = {},
-  onAddNode, onRemoveNode, disabled = false,
+  onAddNode, onRemoveNode, onStopNode, disabled = false,
   csvDistribution = [], writeFlowAnim = null, gossipAnim = null,
   hashingType = null,
 }) {
@@ -587,9 +587,20 @@ export default function TokenRing({
                 </g>
               )}
               {isHovered && tooltipVisible && !isJoining && (
-                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()} style={{ cursor: "pointer" }}>
-                  <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
-                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                <g style={{ cursor: "pointer" }}>
+                  {/* Stop button */}
+                  {node.status === "up" && (
+                    <g onClick={e => { e.stopPropagation(); onStopNode?.(node.id); }} onMouseDown={e => e.stopPropagation()}>
+                      <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f59e0b" opacity={0.9} />
+                      <rect x={pos.x + 14.5} y={pos.y + 14.5} width={2} height={5} fill="white" style={{ pointerEvents: "none" }} />
+                      <rect x={pos.x + 17.5} y={pos.y + 14.5} width={2} height={5} fill="white" style={{ pointerEvents: "none" }} />
+                    </g>
+                  )}
+                  {/* Remove button */}
+                  <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()}>
+                    <circle cx={pos.x + (node.status === "up" ? 37 : 17)} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
+                    <text x={pos.x + (node.status === "up" ? 37 : 17)} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                  </g>
                 </g>
               )}
             </g>

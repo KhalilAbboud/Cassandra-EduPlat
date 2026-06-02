@@ -53,7 +53,33 @@ def explain(cluster_name: str, keyspace: str, table: str, body: EndpointsRequest
 @router.post("/hashes")
 def batch_hashes(body: BatchHashesRequest):
     try:
-        return {k: str(mmh3.hash64(k, signed=True)[0]) for k in body.keys}
+        result = {}
+        for k in body.keys:
+            if body.hashing_type == "md5":
+                import hashlib
+                md5_digest = hashlib.md5(k.encode("utf-8")).hexdigest()
+                result[k] = str(int(md5_digest, 16))
+            elif body.hashing_type == "fnv1a":
+                # Match frontend FNV1a logic (scaled to Murmur3 range)
+                h = 0x811c9dc5
+                for char in k:
+                    h ^= ord(char)
+                    h = (h * 0x01000193) % 0x100000000
+                MURMUR3_MIN = -9223372036854775808
+                MURMUR3_RANGE = 18446744073709551616
+                scaled = int((h * (MURMUR3_RANGE / 0x100000000)) + MURMUR3_MIN)
+                result[k] = str(scaled)
+            elif body.hashing_type == "xxhash":
+                # Mock xxHash using python hash (just for simulation purposes since xxhash library isn't installed)
+                # Keep it deterministic using hashlib md5 but scaled differently
+                import hashlib
+                digest = int(hashlib.md5(k.encode("utf-8")).hexdigest()[:16], 16)
+                MURMUR3_MIN = -9223372036854775808
+                result[k] = str(digest + MURMUR3_MIN)
+            else:
+                # Default: Murmur3Partitioner (signed 64-bit)
+                result[k] = str(mmh3.hash64(k, signed=True)[0])
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

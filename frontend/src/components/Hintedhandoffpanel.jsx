@@ -138,6 +138,7 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
   const handleRecover = useCallback(async (targetNodeId) => {
     if (!startNode) return;
     pushLog(`Starting recovery for ${targetNodeId}…`, ACCENT);
+    pushLog(`Waiting for container to boot up... (can take 15-30s)`, "rgba(255,255,255,0.4)");
     try {
       const nodeHints = hints.filter(h => h.target_node === targetNodeId);
       let i = 0;
