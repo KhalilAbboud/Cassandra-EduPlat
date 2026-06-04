@@ -13,8 +13,4 @@
 - frontend/src/services/api.js — API calls
 
 ## Known issues solved
-- cassandra.consistent.rangemovement=false needed for parallel joins
-- nodetool removenode required before recreating a deleted node
-- Docker socket must be mounted for backend to spawn containers
-
---> the file keeps getting updated with each branch
+- updates will come soon to this, or it might get removed
