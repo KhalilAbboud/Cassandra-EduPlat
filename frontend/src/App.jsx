@@ -24,20 +24,31 @@ const btn = { width: "100%", marginBottom: 4 };
 const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
 const COLUMN_TYPES = ["text", "int", "float", "boolean", "uuid", "timestamp", "bigint"];
 
-async function pollForTokens(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 30000 } = {}) {
+async function pollForNodeUp(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 90000 } = {}) {
+  // Wait until the backend reports the node as BOTH running (status "up") AND has tokens.
+  // We can't rely on tokens alone because pause/unpause keeps tokens in nodetool ring even
+  // while the container is paused — so tokens never disappear and would resolve instantly.
   const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const tick = async () => {
-      if (Date.now() > deadline) { reject(new Error(`Timeout waiting for tokens on ${nodeId}`)); return; }
+      if (Date.now() > deadline) { reject(new Error(`Timeout waiting for ${nodeId} to come up`)); return; }
       try {
         const arr = await fetchClusterFn();
         const found = Array.isArray(arr) ? arr.find(n => n.name === nodeId) : null;
-        if (found && Array.isArray(found.tokens) && found.tokens.length > 0) resolve(found);
-        else setTimeout(tick, intervalMs);
+        if (found && found.status?.toLowerCase() === "up" && Array.isArray(found.tokens) && found.tokens.length > 0) {
+          resolve(found);
+        } else {
+          setTimeout(tick, intervalMs);
+        }
       } catch { setTimeout(tick, intervalMs); }
     };
     tick();
   });
+}
+
+// Keep the old name as an alias for the add-node flow (new nodes start with 0 tokens so token check is fine)
+async function pollForTokens(nodeId, fetchClusterFn, opts) {
+  return pollForNodeUp(nodeId, fetchClusterFn, opts);
 }
 
 function CollapseBtn({ open, onClick, side }) {
@@ -245,6 +256,7 @@ export default function App() {
       await fetchCluster();
     } catch (e) {
       console.error("startNode failed", e);
+      throw e;
     }
   }, [clusterName, fetchCluster, fetchClusterRaw]);
 
@@ -317,34 +329,46 @@ export default function App() {
 
   const handleWrite = async () => {
     if (!schemaReady) { setOutput({ error: "Run Setup first" }); return; }
-    const pkVal = rowValues[primaryPartitionKey];
-    if (!pkVal?.trim()) { setOutput({ error: `Partition key '${primaryPartitionKey}' cannot be empty` }); return; }
+    
+    let pkVal = rowValues[primaryPartitionKey];
+    if (!pkVal?.trim()) { 
+      // Auto-increment logic: find the highest numeric PK in existing data
+      let maxPk = 0;
+      csvDistribution.forEach(d => {
+        const val = parseInt(d.partitionValue, 10);
+        if (!isNaN(val) && val > maxPk) maxPk = val;
+      });
+      pkVal = String(maxPk + 1);
+    }
+    
+    const rowToSend = { ...rowValues, [primaryPartitionKey]: pkVal };
+    
     try {
-      const r = await writeData(rowValues, consistencyLevel, keyspaceName, tableName, clusterName);
+      const r = await writeData(rowToSend, consistencyLevel, keyspaceName, tableName, clusterName);
       setOutput(r);
-      
+
       let backendPlacement = null;
       try {
         const hashesObj = await getBatchHashes([String(pkVal)], hashingType);
         if (hashesObj[String(pkVal)] != null) {
-          backendPlacement = simulatePlacement({ 
-            key: String(pkVal), 
-            nodes, 
-            replicationFactor, 
-            precomputedHash: hashesObj[String(pkVal)] 
+          backendPlacement = simulatePlacement({
+            key: String(pkVal),
+            nodes,
+            replicationFactor,
+            precomputedHash: hashesObj[String(pkVal)]
           });
         }
       } catch (e) {
         backendPlacement = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
       }
 
-      addToNodeDataMap(rowValues, nodes, replicationFactor, backendPlacement);
+      addToNodeDataMap(rowToSend, nodes, replicationFactor, backendPlacement);
       if (backendPlacement) {
-        setCsvDistribution(prev => [...prev, { rowId: `manual_${Date.now()}`, partitionValue: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, row: rowValues }]);
+        setCsvDistribution(prev => [...prev, { rowId: `manual_${Date.now()}`, partitionValue: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, row: rowToSend }]);
       }
-      
+
       fetchCluster();
-      
+
       if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
         const TOTAL_DURATION = 7000;
         const startTime = performance.now();
@@ -452,7 +476,7 @@ export default function App() {
       const parts = line.split(delim).map(c => c.trim());
       return parts[headers.indexOf(pkCol)];
     }).filter(Boolean))];
-    
+
     let hashesObj = {};
     try {
       hashesObj = await getBatchHashes(uniqueKeys, hashingType);
@@ -462,6 +486,8 @@ export default function App() {
 
     // Scale animation speed based on CSV size to prevent massive delays
     const animDuration = dataLines.length > 50 ? 80 : (dataLines.length > 15 ? 150 : 400);
+    // Scale write flow animation duration to match
+    const writeFlowDuration = dataLines.length > 50 ? 600 : (dataLines.length > 15 ? 1500 : 4000);
 
     for (let i = 0; i < dataLines.length; i++) {
       const line = dataLines[i];
@@ -474,21 +500,34 @@ export default function App() {
       try {
         await writeData(row, consistencyLevel, ksName, tblName, clusterName);
         imported++;
-        
+
         let backendPlacement = null;
         if (hashesObj[String(pval)] != null) {
-          backendPlacement = simulatePlacement({ 
-            key: String(pval), 
-            nodes, 
-            replicationFactor, 
-            precomputedHash: hashesObj[String(pval)] 
+          backendPlacement = simulatePlacement({
+            key: String(pval),
+            nodes,
+            replicationFactor,
+            precomputedHash: hashesObj[String(pval)]
           });
         } else {
           backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
         }
 
         if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
-          await new Promise(res => setTimeout(res, animDuration));
+          // Trigger the write flow animation on the ring (same as manual write)
+          const startTime = performance.now();
+          const totalDur = writeFlowDuration;
+          setWriteFlowAnim({ key: String(pval), hash: backendPlacement.hash, replicas: backendPlacement.replicas, progress: 0 });
+          await new Promise(resolve => {
+            const animateFlow = (now) => {
+              const t = Math.min((now - startTime) / totalDur, 1);
+              setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
+              if (t < 1) requestAnimationFrame(animateFlow);
+              else { setWriteFlowAnim(null); resolve(); }
+            };
+            requestAnimationFrame(animateFlow);
+          });
+
           setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row }]);
           addToNodeDataMap(row, nodes, replicationFactor, backendPlacement);
         }
@@ -497,6 +536,7 @@ export default function App() {
         errors.push(`row ${i + 1} (${pval}): ${err.message}`);
       }
     }
+    setWriteFlowAnim(null);
     return { imported, skipped, errors };
   }, [consistencyLevel, clusterName, nodes, replicationFactor, hashingType, addToNodeDataMap]);
 

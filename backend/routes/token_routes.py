@@ -90,7 +90,7 @@ def _get_running_container(cluster_name: str):
     network_name = f"cassandra-net-{cluster_name}"
     for c in client.containers.list():
         c.reload()
-        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {}):
+        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {}) and c.status == "running":
             return c
     raise Exception(f"No running container found for cluster '{cluster_name}'")
 
@@ -166,4 +166,6 @@ def gossip(cluster_name: str):
             node["node_name"] = ip_to_name.get(node["ip"], node["ip"])
         return {"cluster_name": cluster_name, "nodes": nodes}
     except Exception as e:
+        if "No running container found" in str(e):
+            return {"cluster_name": cluster_name, "nodes": []}
         raise HTTPException(status_code=500, detail=str(e))

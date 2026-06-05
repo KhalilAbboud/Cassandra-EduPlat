@@ -7,23 +7,7 @@ from services.dockerService import (
 )
 
 def get_node_tokens(container) -> list:
-    try:
-        result = container.exec_run("nodetool info -T")
-        if result.exit_code != 0:
-            return []
-        tokens = []
-        for line in result.output.decode().splitlines():
-            if "Token" in line:
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    token_str = parts[1].strip()
-                    try:
-                        tokens.append(int(token_str))
-                    except ValueError:
-                        continue
-        return tokens
-    except Exception:
-        pass
+    # Not used anymore, replaced by global ring fetch
     return []
 
 def create_node(payload: NodeCreate) -> NodeResponse:
@@ -99,13 +83,32 @@ def get_all_nodes(cluster_name: str) -> list[NodeResponse]:
             cassandra_containers.append(container)
 
     ip_status_map = {}
+    ip_tokens_map = {}
+    
+    # Trouver le premier container running pour obtenir le ring state complet
     for container in cassandra_containers:
         if container.status == "running":
             try:
-                result = container.exec_run("nodetool status")
-                if result.exit_code == 0:
-                    ip_status_map = parse_nodetool_status(result.output.decode())
-                    break
+                # nodetool status pour l'état UP/DOWN
+                result_status = container.exec_run("nodetool status")
+                if result_status.exit_code == 0:
+                    ip_status_map = parse_nodetool_status(result_status.output.decode())
+                
+                # nodetool ring pour les tokens de TOUS les noeuds
+                result_ring = container.exec_run("nodetool ring")
+                if result_ring.exit_code == 0:
+                    for line in result_ring.output.decode().splitlines():
+                        parts = line.split()
+                        if len(parts) >= 7 and parts[2] in ["Up", "Down"] and parts[3] in ["Normal", "Joining", "Leaving", "Moving"]:
+                            ip = parts[0]
+                            token_str = parts[-1]
+                            try:
+                                if ip not in ip_tokens_map:
+                                    ip_tokens_map[ip] = []
+                                ip_tokens_map[ip].append(int(token_str))
+                            except ValueError:
+                                pass
+                break
             except Exception:
                 continue
 
@@ -129,7 +132,7 @@ def get_all_nodes(cluster_name: str) -> list[NodeResponse]:
             status=status,
             rack="rack1",
             datacenter="datacenter1",
-            tokens=get_node_tokens(container)
+            tokens=ip_tokens_map.get(ip, [])
         ))
     return result
 

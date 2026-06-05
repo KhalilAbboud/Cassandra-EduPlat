@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const ACCENT = "#20B2AA";
-const AMBER  = "#f59e0b";
-const GREEN  = "#22c55e";
-const RED    = "#ef4444";
+const AMBER = "#f59e0b";
+const GREEN = "#22c55e";
+const RED = "#ef4444";
 
-const card  = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
-const h3s   = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, margin: "0 0 10px" };
-const mono  = { fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 11 };
+const card = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
+const h3s = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, margin: "0 0 10px" };
+const mono = { fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 11 };
 
 // ─── Hint bubble SVG animation ──────────────────────────────────────────────
 
@@ -15,16 +15,16 @@ function HintFlowSVG({ hints, nodes, replayingHint }) {
   const W = 340, H = 110;
   if (!hints.length || nodes.length < 2) return null;
 
-  const downNodeId  = hints[0]?.target_node;
-  const downNode    = nodes.find(n => n.id === downNodeId) ?? nodes[0];
-  const coordNode   = nodes.find(n => n.id !== downNode.id) ?? nodes[1];
+  const downNodeId = replayingHint?.targetNode ?? hints[0]?.target_node;
+  const downNode = nodes.find(n => n.id === downNodeId) ?? { id: downNodeId };
+  const coordNode = nodes.find(n => n.id !== downNode.id && n.status === "up") ?? nodes.find(n => n.id !== downNode.id) ?? { id: "Coord" };
 
-  const coordX = 80,  coordY = H / 2;
-  const downX  = 260, downY  = H / 2;
+  const coordX = 80, coordY = H / 2;
+  const downX = 260, downY = H / 2;
 
   const isReplaying = replayingHint != null;
-  const progress    = replayingHint?.progress ?? 0;
-  const dotX        = coordX + (downX - coordX) * progress;
+  const progress = replayingHint?.progress ?? 0;
+  const dotX = coordX + (downX - coordX) * progress;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
@@ -92,15 +92,15 @@ function HintFlowSVG({ hints, nodes, replayingHint }) {
  *   startNode    — async (nodeName, clusterName) => void   (triggers recovery)
  */
 export default function HintedHandoffPanel({ clusterName, nodes, getHints, startNode }) {
-  const [hints, setHints]           = useState([]);
-  const [rawStats, setRawStats]      = useState("");
-  const [loading, setLoading]        = useState(false);
-  const [error, setError]            = useState("");
+  const [hints, setHints] = useState([]);
+  const [rawStats, setRawStats] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [replayingHint, setReplaying] = useState(null);   // { targetNode, progress }
-  const [log, setLog]                = useState([]);
-  const [expanded, setExpanded]      = useState(false);
-  const intervalRef                  = useRef(null);
-  const mountedRef                   = useRef(true);
+  const [log, setLog] = useState([]);
+  const [expanded, setExpanded] = useState(false);
+  const intervalRef = useRef(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
@@ -139,8 +139,14 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
     if (!startNode) return;
     pushLog(`Starting recovery for ${targetNodeId}…`, ACCENT);
     pushLog(`Waiting for container to boot up... (can take 15-30s)`, "rgba(255,255,255,0.4)");
+    setReplaying({ targetNode: targetNodeId, progress: 0 });
     try {
       const nodeHints = hints.filter(h => h.target_node === targetNodeId);
+
+      await startNode(targetNodeId, clusterName);
+
+      pushLog(`${targetNodeId} container up! Replaying hints…`, GREEN);
+
       let i = 0;
       const startTime = performance.now();
       const TOTAL = 3500;
@@ -157,7 +163,6 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
       };
       requestAnimationFrame(animate);
 
-      await startNode(targetNodeId, clusterName);
       for (const hint of nodeHints) {
         await new Promise(r => setTimeout(r, 300));
         pushLog(`  → replaying key "${hint.key}" to ${targetNodeId}`, AMBER);
@@ -169,7 +174,7 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
     }
   }, [hints, startNode, clusterName, pushLog]);
 
-  const downNodes  = [...new Set(hints.map(h => h.target_node))];
+  const downNodes = [...new Set(hints.map(h => h.target_node))];
   const aliveNodes = nodes.filter(n => n.status === "up");
 
   return (
@@ -197,7 +202,7 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
       )}
 
       {/* SVG visualisation */}
-      <HintFlowSVG hints={hints} nodes={aliveNodes} replayingHint={replayingHint} />
+      <HintFlowSVG hints={hints} nodes={nodes} replayingHint={replayingHint} />
 
       {/* Status bar */}
       <div style={{ display: "flex", gap: 8, marginTop: 6, marginBottom: 10, flexWrap: "wrap" }}>

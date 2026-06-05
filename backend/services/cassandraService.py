@@ -2,7 +2,7 @@ from cassandra.io.asyncioreactor import AsyncioConnection
 from cassandra.cluster import Cluster
 from cassandra.policies import DCAwareRoundRobinPolicy
 from cassandra.query import SimpleStatement
-from cassandra import ConsistencyLevel
+from cassandra import ConsistencyLevel, WriteTimeout, ReadTimeout
 from services.dockerService import client
 from cassandra import Unavailable
 from cassandra.cluster import NoHostAvailable
@@ -171,6 +171,14 @@ def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency
             "required_replicas": e.required_replicas,
             "alive_replicas": e.alive_replicas,
             "tip": "Try a lower consistency level or ensure enough nodes are UP"
+        })
+    except WriteTimeout as e:
+        raise HTTPException(status_code=503, detail={
+            "error": "Write timed out waiting for replicas",
+            "consistency_requested": write_consistency,
+            "received_responses": e.received_responses,
+            "required_responses": e.required_responses,
+            "tip": "A replica node may be paused or overloaded. Try consistency ONE or bring nodes back up."
         })
     except NoHostAvailable as e:
         for host, exc in e.errors.items():

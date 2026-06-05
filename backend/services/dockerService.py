@@ -196,8 +196,9 @@ def delete_cassandra_node(node_name: str, cluster_name: str) -> bool:
 def stop_cassandra_node(node_name: str, cluster_name: str) -> bool:
     try:
         container = client.containers.get(node_name)
-        container.stop()
-        print(f"{node_name} stopped")
+        if container.status == 'running':
+            container.pause()
+            print(f"{node_name} paused")
         return True
     except docker.errors.NotFound:
         return False
@@ -206,8 +207,12 @@ def stop_cassandra_node(node_name: str, cluster_name: str) -> bool:
 def start_cassandra_node(node_name: str, cluster_name: str) -> bool:
     try:
         container = client.containers.get(node_name)
-        container.start()
-        print(f"{node_name} started")
+        if container.status == 'paused':
+            container.unpause()
+            print(f"{node_name} unpaused")
+        elif container.status != 'running':
+            container.start()
+            print(f"{node_name} started")
         return True
     except docker.errors.NotFound:
         return False

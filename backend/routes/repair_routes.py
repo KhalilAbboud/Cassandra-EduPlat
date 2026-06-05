@@ -25,7 +25,7 @@ def _get_running_container(cluster_name: str):
     network_name = f"cassandra-net-{cluster_name}"
     for c in client.containers.list():
         c.reload()
-        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {}):
+        if network_name in c.attrs.get("NetworkSettings", {}).get("Networks", {}) and c.status == "running":
             return c
     raise Exception(f"No running container found for cluster '{cluster_name}'")
 
