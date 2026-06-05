@@ -1,4 +1,4 @@
-# Cassandra EduPlat 🎓🚀
+# Cassandra Education Platform
 
 Cassandra EduPlat is an interactive, visual simulator and educational platform designed to demystify the inner workings of Apache Cassandra. Instead of staring at terminal logs and abstract documentation, this platform lets you *see* and *feel* how a distributed NoSQL database actually behaves in real-time.
 
@@ -6,7 +6,7 @@ Whether you're a student learning distributed systems or an engineer trying to w
 
 ---
 
-## 🌟 What makes this cool?
+## What makes this cool?
 
 Ever wondered what happens when a node dies mid-write? Or how `Murmur3Partitioner` actually places data on a ring?
 
@@ -23,7 +23,7 @@ EduPlat boots up *real* Cassandra instances using Docker behind the scenes, but 
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 This project bridges the gap between low-level infrastructure and modern UI/UX.
 
@@ -33,7 +33,7 @@ This project bridges the gap between low-level infrastructure and modern UI/UX.
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 1. **Docker & Docker Compose** (Make sure Docker Desktop is running if you're on Windows/Mac).
@@ -48,13 +48,20 @@ cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-*(Alternatively, you can run the backend via `docker-compose up` if configured in your environment).*
+or you can use docker compose
+```bash
+docker-compose up --build
+```
 
 ### 2. Start the Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+or you can use docker compose
+```bash
+docker-compose up --build
 ```
 
 ### 3. Play!
@@ -66,7 +73,7 @@ npm run dev
 
 ---
 
-## 🧠 Why build this?
+## Why build this?
 
 Distributed systems are notoriously hard to teach. Concepts like *Consistent Hashing*, *Gossip Protocols*, and *Eventual Consistency* sound great on paper, but are incredibly hard to visualize.
 
@@ -74,7 +81,7 @@ This platform was built to turn those abstract concepts into a visceral, interac
 
 ---
 
-## 🤝 Contributing
+## Contributing
 Feel free to fork, break, and improve! We're always looking to add support for more visual algorithms (like Merkle Trees for Anti-Entropy Repair or SSTable compaction visualizers).
 
-*Built with ❤️ for the love of Distributed Systems.*
+*for any help or assistance or contributions email us at [khalil.abboud.1st@gmail.com].*
