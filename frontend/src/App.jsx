@@ -24,7 +24,7 @@ const btn = { width: "100%", marginBottom: 4 };
 const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
 const COLUMN_TYPES = ["text", "int", "float", "boolean", "uuid", "timestamp", "bigint"];
 
-async function pollForNodeUp(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 90000 } = {}) {
+async function pollForNodeUp(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 240000 } = {}) {
   // Wait until the backend reports the node as BOTH running (status "up") AND has tokens.
   // We can't rely on tokens alone because pause/unpause keeps tokens in nodetool ring even
   // while the container is paused — so tokens never disappear and would resolve instantly.
@@ -329,9 +329,9 @@ export default function App() {
 
   const handleWrite = async () => {
     if (!schemaReady) { setOutput({ error: "Run Setup first" }); return; }
-    
+
     let pkVal = rowValues[primaryPartitionKey];
-    if (!pkVal?.trim()) { 
+    if (!pkVal?.trim()) {
       // Auto-increment logic: find the highest numeric PK in existing data
       let maxPk = 0;
       csvDistribution.forEach(d => {
@@ -340,9 +340,9 @@ export default function App() {
       });
       pkVal = String(maxPk + 1);
     }
-    
+
     const rowToSend = { ...rowValues, [primaryPartitionKey]: pkVal };
-    
+
     try {
       const r = await writeData(rowToSend, consistencyLevel, keyspaceName, tableName, clusterName);
       setOutput(r);
@@ -484,10 +484,12 @@ export default function App() {
       console.error("Batch hash failed", e);
     }
 
+    const writeFlowDuration = dataLines.length > 50 ? 0 : (dataLines.length > 15 ? 1500 : 4000);
+    const newDistributions = [];
+    const localNodeDataMap = {};
+
     // Scale animation speed based on CSV size to prevent massive delays
     const animDuration = dataLines.length > 50 ? 80 : (dataLines.length > 15 ? 150 : 400);
-    // Scale write flow animation duration to match
-    const writeFlowDuration = dataLines.length > 50 ? 600 : (dataLines.length > 15 ? 1500 : 4000);
 
     for (let i = 0; i < dataLines.length; i++) {
       const line = dataLines[i];
@@ -514,22 +516,28 @@ export default function App() {
         }
 
         if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
-          // Trigger the write flow animation on the ring (same as manual write)
-          const startTime = performance.now();
-          const totalDur = writeFlowDuration;
-          setWriteFlowAnim({ key: String(pval), hash: backendPlacement.hash, replicas: backendPlacement.replicas, progress: 0 });
-          await new Promise(resolve => {
-            const animateFlow = (now) => {
-              const t = Math.min((now - startTime) / totalDur, 1);
-              setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
-              if (t < 1) requestAnimationFrame(animateFlow);
-              else { setWriteFlowAnim(null); resolve(); }
-            };
-            requestAnimationFrame(animateFlow);
-          });
+          if (dataLines.length <= 50) {
+            // Trigger the write flow animation on the ring (same as manual write) for small datasets
+            const startTime = performance.now();
+            const totalDur = writeFlowDuration;
+            setWriteFlowAnim({ key: String(pval), hash: backendPlacement.hash, replicas: backendPlacement.replicas, progress: 0 });
+            await new Promise(resolve => {
+              const animateFlow = (now) => {
+                const t = Math.min((now - startTime) / totalDur, 1);
+                setWriteFlowAnim(prev => prev ? { ...prev, progress: t } : null);
+                if (t < 1) requestAnimationFrame(animateFlow);
+                else { setWriteFlowAnim(null); resolve(); }
+              };
+              requestAnimationFrame(animateFlow);
+            });
+          }
 
-          setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row }]);
-          addToNodeDataMap(row, nodes, replicationFactor, backendPlacement);
+          newDistributions.push({ rowId: `row${i + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row });
+
+          backendPlacement.replicas.forEach(node => {
+            const existing = localNodeDataMap[node.id] ?? [];
+            localNodeDataMap[node.id] = [...existing.filter(item => item.key !== String(pval)), { key: String(pval), value: JSON.stringify(row) }];
+          });
         }
       } catch (err) {
         skipped++;
@@ -537,8 +545,24 @@ export default function App() {
       }
     }
     setWriteFlowAnim(null);
+
+    // Apply batched state updates
+    if (newDistributions.length > 0) {
+      setCsvDistribution(prev => [...prev, ...newDistributions]);
+      setNodeDataMap(prev => {
+        const next = { ...prev };
+        for (const [nodeId, items] of Object.entries(localNodeDataMap)) {
+          const existing = next[nodeId] ?? [];
+          // Merge avoiding duplicates by key
+          const existingFiltered = existing.filter(ex => !items.some(it => it.key === ex.key));
+          next[nodeId] = [...existingFiltered, ...items];
+        }
+        return next;
+      });
+    }
+
     return { imported, skipped, errors };
-  }, [consistencyLevel, clusterName, nodes, replicationFactor, hashingType, addToNodeDataMap]);
+  }, [consistencyLevel, clusterName, nodes, replicationFactor, hashingType]);
 
   const onImportCsv = useCallback(async () => {
     if (!csvFile) { setCsvError("Choose a CSV file first."); return; }

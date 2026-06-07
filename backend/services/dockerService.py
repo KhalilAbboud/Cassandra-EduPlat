@@ -126,10 +126,19 @@ def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = 
         "CASSANDRA_CLUSTER_NAME": cluster_name,
         "CASSANDRA_SEEDS": seed,
         "CASSANDRA_PARTITIONER": partitioner_full,
-        "MAX_HEAP_SIZE": "512M",
-        "HEAP_NEWSIZE": "100M",
-        "CASSANDRA_RING_DELAY_MS": "5000",
+        # Keep heap small so 3 nodes can coexist without triggering Docker's
+        # OOM killer. AlwaysPreTouch (Cassandra default) commits ALL heap at
+        # startup — 3 × 512M = 1.5 GB committed instantly, which kills peers.
+        "MAX_HEAP_SIZE": "256M",
+        "HEAP_NEWSIZE": "64M",
+        # Give gossip more time to settle before bootstrap begins
+        "CASSANDRA_RING_DELAY_MS": "10000",
         "CASSANDRA_NUM_TOKENS": "16",
+        # Allow bootstrapping even when a peer replica is temporarily down.
+        # Without this, Cassandra aborts with "Necessary replicas for strict
+        # consistency were removed by source filters" if any node is DOWN.
+        "CASSANDRA_CONSISTENT_RANGE_MOVEMENT": "false",
+        "JVM_EXTRA_OPTS": "-Dcassandra.consistent.rangemovement=false",
     }
     if initial_token:
         env["CASSANDRA_INITIAL_TOKEN"] = initial_token
@@ -139,7 +148,7 @@ def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = 
         name=node_name,
         environment=env,
         ports={"9042/tcp": host_port},
-        mem_limit="1g",
+        mem_limit="1.5g",  # 256M heap + ~1.25G headroom for off-heap (Netty, direct memory, metaspace)
         detach=True,
         network=network_name,
     )

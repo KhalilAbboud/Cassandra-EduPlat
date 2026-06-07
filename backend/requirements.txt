@@ -1,6 +1,8 @@
 fastapi
 uvicorn
-docker
+docker>=7.0.0
+requests>=2.31.0
+urllib3>=1.26.0
 cassandra-driver
 pydantic
 mmh3
