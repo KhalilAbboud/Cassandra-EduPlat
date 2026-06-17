@@ -14,15 +14,20 @@ import { simulatePlacement } from "./utils/cassandraSimulation";
 import "./App.css";
 
 const NAME_POOL = ["NodeA", "NodeB", "NodeC", "NodeD", "NodeE", "NodeF"];
-const BORDER = "1px solid rgba(255,255,255,0.07)";
-const BG_CARD = "rgba(255,255,255,0.03)";
-const ACCENT = "#20B2AA";
+const BORDER = "1px solid #2E4560";
+const BG_CARD = "#243447";
+const ACCENT = "#18B4C8";
 const card = { background: BG_CARD, border: BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
 const h3 = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, marginBottom: 8, fontWeight: 700, margin: "0 0 10px" };
 const inp = { width: "100%", boxSizing: "border-box", marginBottom: 6 };
 const btn = { width: "100%", marginBottom: 4 };
-const lbl = { fontSize: 10, color: "rgba(255,255,255,0.4)", marginBottom: 3, display: "block" };
-const COLUMN_TYPES = ["text", "int", "float", "boolean", "uuid", "timestamp", "bigint"];
+const lbl = { fontSize: 10, color: "#5A7A96", marginBottom: 3, display: "block" };
+
+// Colonnes fixes : id (PK) + value
+const FIXED_COLUMNS = [
+  { name: "id", type: "text", isPartitionKey: true },
+  { name: "value", type: "text", isPartitionKey: false },
+];
 
 async function pollForTokens(nodeId, fetchClusterFn, { intervalMs = 1500, timeoutMs = 30000 } = {}) {
   const deadline = Date.now() + timeoutMs;
@@ -48,14 +53,14 @@ function CollapseBtn({ open, onClick, side }) {
         [side === "left" ? "right" : "left"]: -20, zIndex: 10,
         width: 32, height: 64,
         borderRadius: side === "left" ? "0 8px 8px 0" : "8px 0 0 8px",
-        background: "#13132a", border: BORDER,
+        background: "#FFFFFF", border: BORDER,
         [side === "left" ? "borderLeft" : "borderRight"]: "none",
         color: ACCENT, cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 12, padding: 0, lineHeight: 1, transition: "background 0.2s",
       }}
       onMouseEnter={e => e.currentTarget.style.background = "rgba(32,178,170,0.15)"}
-      onMouseLeave={e => e.currentTarget.style.background = "#13132a"}
+      onMouseLeave={e => e.currentTarget.style.background = "#FFFFFF"}
     >
       {side === "left" ? (open ? "◀" : "▶") : (open ? "▶" : "◀")}
     </button>
@@ -71,13 +76,34 @@ function Tabs({ tabs, active, onChange }) {
             flex: 1, padding: "5px 4px", fontSize: 10, cursor: "pointer",
             background: active === t.id ? "rgba(32,178,170,0.15)" : "transparent",
             border: "none", borderBottom: active === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
-            color: active === t.id ? ACCENT : "rgba(255,255,255,0.4)",
+            color: active === t.id ? ACCENT : "#5A7A96",
             fontWeight: active === t.id ? 700 : 400,
             fontFamily: "inherit", letterSpacing: 1, transition: "all 0.15s",
           }}>
           {t.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// Message pédagogique affiché après Write/Read
+function PedaMessage({ msg, onClose }) {
+  if (!msg) return null;
+  return (
+    <div style={{
+      background: "rgba(24,180,200,0.10)",
+      border: `1px solid ${ACCENT}`,
+      borderRadius: 8,
+      padding: "10px 14px",
+      marginBottom: 8,
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 8,
+    }}>
+      <span style={{ fontSize: 16, lineHeight: 1 }}>💡</span>
+      <span style={{ fontSize: 11, color: "#c8eef3", lineHeight: 1.6, flex: 1 }}>{msg}</span>
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "#5A7A96", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
     </div>
   );
 }
@@ -89,6 +115,7 @@ export default function App() {
   const [nodeDataMap, setNodeDataMap] = useState({});
   const usedNamesRef = useRef(new Set());
   const clusterInitializedRef = useRef(false);
+  const addNodeQueueRef = useRef(Promise.resolve());
 
   const [clusterName, setClusterName] = useState("TestCluster");
   const [editableClusterName, setEditableClusterName] = useState("TestCluster");
@@ -97,22 +124,28 @@ export default function App() {
   const [keyspaceName, setKeyspaceName] = useState("edu_keyspace");
   const [strategy, setStrategy] = useState("SimpleStrategy");
   const [replicationFactor, setReplicationFactor] = useState(2);
-  const [tableName, setTableName] = useState("edu_table");
-  const [columns, setColumns] = useState([
-    { name: "id", type: "text", isPartitionKey: true },
-    { name: "value", type: "text", isPartitionKey: false },
-  ]);
+  const [tableName] = useState("edu_table");
+
+  // Colonnes fixes — pas d'état éditable
+  const columns = FIXED_COLUMNS;
+  const partitionKeys = ["id"];
+  const primaryPartitionKey = "id";
+
   const [schemaReady, setSchemaReady] = useState(false);
-
   const [dataTab, setDataTab] = useState("manual");
-
-  // ─── Right panel tabs ─────────────────────────────────────────────
   const [rightTab, setRightTab] = useState("output");
 
   const [rowValues, setRowValues] = useState({});
   const [consistencyLevel, setConsistencyLevel] = useState("QUORUM");
   const [filterKey, setFilterKey] = useState("");
   const [output, setOutput] = useState(null);
+  const [loadingMsg, setLoadingMsg] = useState(null);
+
+  // Coordinator node sélectionné par l'utilisateur
+  const [coordinatorNode, setCoordinatorNode] = useState("");
+
+  // Message pédagogique
+  const [pedaMsg, setPedaMsg] = useState("");
 
   const [csvFile, setCsvFile] = useState(null);
   const [csvColumns, setCsvColumns] = useState([]);
@@ -128,19 +161,23 @@ export default function App() {
   const gossipIntervalRef = useRef(null);
   const prevGossipRef = useRef({});
 
-  // ─── CAP Error Modal ──────────────────────────────────────────────
   const [capError, setCapError] = useState(null);
   const [isCsvImporting, setIsCsvImporting] = useState(false);
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const SIDEBAR_W = 340;
+  const SIDEBAR_W = 280;
 
-  const partitionKeys = useMemo(() => columns.filter(c => c.isPartitionKey).map(c => c.name), [columns]);
-  const primaryPartitionKey = partitionKeys[0] ?? "";
+  // Noeuds actifs pour le select coordinator
+  const upNodes = useMemo(() => nodes.filter(n => n.status === "up"), [nodes]);
 
-  const getNextName = useCallback(() =>
-    NAME_POOL.find(n => !usedNamesRef.current.has(n)) ?? `Node${Date.now()}`, []);
+  // Sync coordinatorNode quand la liste change
+  useEffect(() => {
+    if (upNodes.length === 0) { setCoordinatorNode(""); return; }
+    if (!upNodes.find(n => n.id === coordinatorNode)) {
+      setCoordinatorNode(upNodes[0].id);
+    }
+  }, [upNodes, coordinatorNode]);
 
   const replicatedCounts = useMemo(() => {
     const counts = {};
@@ -182,34 +219,59 @@ export default function App() {
     setClusterName(trimmed);
     setEditableClusterName(trimmed);
     clusterInitializedRef.current = false;
+    addNodeQueueRef.current = Promise.resolve();
     setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
     usedNamesRef.current.clear();
     setOutput(null); setSchemaReady(false); prevGossipRef.current = {};
     setCsvFile(null); setCsvColumns([]); setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
     setRowValues({});
+    setLoadingMsg(null);
+    setPedaMsg("");
   }, [clusterName]);
 
-  const handleAddNode = useCallback(async (token) => {
+  const doReset = useCallback(() => {
+    deleteCluster(clusterName).then(() => {
+      clusterInitializedRef.current = false;
+      addNodeQueueRef.current = Promise.resolve();
+      setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
+      usedNamesRef.current.clear(); setOutput(null); setLoadingMsg(null);
+      setCsvFile(null); setCsvColumns([]); setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
+      setRowValues({}); setSchemaReady(false); prevGossipRef.current = {};
+      setPedaMsg("");
+    }).catch(e => setOutput({ error: e.message }));
+  }, [clusterName]);
+
+  const getNextName = useCallback(() =>
+    NAME_POOL.find(n => !usedNamesRef.current.has(n)) ?? `Node${Date.now()}`, []);
+
+  const handleAddNode = useCallback((token) => {
     const id = getNextName();
     if (usedNamesRef.current.has(id)) return;
     usedNamesRef.current.add(id);
     const stamp = Date.now();
+
     setNodes(prev => [...prev, { id, token, tokens: [], status: "joining", stamp }]);
-    try {
-      if (!clusterInitializedRef.current) {
-        clusterInitializedRef.current = true;
-        try { await deleteCluster(clusterName); } catch { /* may not exist */ }
+
+    addNodeQueueRef.current = addNodeQueueRef.current.then(async () => {
+      setLoadingMsg(`⟳ Creating ${id} — waiting for Cassandra...`);
+      try {
+        if (!clusterInitializedRef.current) {
+          clusterInitializedRef.current = true;
+          try { await deleteCluster(clusterName); } catch { /* may not exist */ }
+        }
+        await addNode(id, clusterName, String(token));
+        const nodeInfo = await pollForTokens(id, fetchClusterRaw);
+        setNodes(prev => prev.map(n => n.id === id && n.stamp === stamp
+          ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? "" } : n));
+        await fetchCluster();
+      } catch (e) {
+        setNodes(prev => prev.filter(n => !(n.id === id && n.stamp === stamp)));
+        usedNamesRef.current.delete(id);
+        setOutput({ error: e.message });
+      } finally {
+        setLoadingMsg(null);
       }
-      await addNode(id, clusterName, String(token));
-      const nodeInfo = await pollForTokens(id, fetchClusterRaw);
-      setNodes(prev => prev.map(n => n.id === id && n.stamp === stamp
-        ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? "" } : n));
-      await fetchCluster();
-    } catch (e) {
-      setNodes(prev => prev.filter(n => !(n.id === id && n.stamp === stamp)));
-      usedNamesRef.current.delete(id);
-      setOutput({ error: e.message });
-    }
+    });
   }, [clusterName, fetchCluster, fetchClusterRaw, getNextName]);
 
   const handleRemoveNode = useCallback(async (nodeId) => {
@@ -221,11 +283,10 @@ export default function App() {
     try { await removeNode(nodeId, clusterName); await fetchCluster(); } catch (e) { console.error("removeNode failed", e); }
   }, [clusterName, fetchCluster, nodes]);
 
-  // ─── handleStartNode: restart a stopped node + re-sync frontend state ────
   const handleStartNode = useCallback(async (nodeId, clusterNameArg) => {
     try {
+      setLoadingMsg(`⟳ Restarting ${nodeId}...`);
       await startNode(nodeId, clusterNameArg ?? clusterName);
-      // Poll until tokens reappear, then mark node as "up" in local state
       const nodeInfo = await pollForTokens(nodeId, fetchClusterRaw);
       setNodes(prev => prev.map(n =>
         n.id === nodeId ? { ...n, status: "up", tokens: nodeInfo.tokens, ip: nodeInfo.ip ?? n.ip } : n
@@ -233,6 +294,8 @@ export default function App() {
       await fetchCluster();
     } catch (e) {
       console.error("startNode failed", e);
+    } finally {
+      setLoadingMsg(null);
     }
   }, [clusterName, fetchCluster, fetchClusterRaw]);
 
@@ -282,47 +345,43 @@ export default function App() {
 
   const anyJoining = nodes.some(n => n.status === "joining");
 
-  const addColumn = () => setColumns(prev => [...prev, { name: "", type: "text", isPartitionKey: false }]);
-  const removeColumn = (i) => setColumns(prev => prev.filter((_, idx) => idx !== i));
-  const updateColumn = (i, field, val) => setColumns(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
-  const togglePartitionKey = (i) => setColumns(prev => prev.map((c, idx) => ({ ...c, isPartitionKey: idx === i ? !c.isPartitionKey : c.isPartitionKey })));
-
   const handleSetup = async () => {
     if (!keyspaceName.trim()) { setOutput({ error: "Keyspace name required" }); return; }
-    if (!tableName.trim()) { setOutput({ error: "Table name required" }); return; }
-    if (columns.some(c => !c.name.trim())) { setOutput({ error: "All columns must have a name" }); return; }
-    if (partitionKeys.length === 0) { setOutput({ error: "At least one partition key required" }); return; }
     try {
-      const colsObj = {};
-      columns.forEach(c => { colsObj[c.name] = c.type; });
+      setLoadingMsg(`⟳ Creating keyspace '${keyspaceName}'...`);
+      const colsObj = { id: "text", value: "text" };
       await createKeyspace(replicationFactor, strategy, keyspaceName, clusterName);
-      await createTable(colsObj, partitionKeys, tableName, keyspaceName, clusterName);
+      setLoadingMsg(`⟳ Creating table '${tableName}'...`);
+      await createTable(colsObj, ["id"], tableName, keyspaceName, clusterName);
       setSchemaReady(true);
       setRowValues({});
-      setOutput({ success: `Keyspace '${keyspaceName}' and table '${tableName}' created.`, columns: columns.map(c => `${c.name} (${c.type})${c.isPartitionKey ? " [PK]" : ""}`).join(", ") });
-    } catch (e) { setOutput({ error: e.message }); }
+      setOutput({ success: `Keyspace '${keyspaceName}' and table '${tableName}' created.`, columns: "id (text) [PK], value (text)" });
+    } catch (e) {
+      setOutput({ error: e.message });
+    } finally {
+      setLoadingMsg(null);
+    }
   };
 
   const handleWrite = async () => {
     if (!schemaReady) { setOutput({ error: "Run Setup first" }); return; }
-    const pkVal = rowValues[primaryPartitionKey];
-    if (!pkVal?.trim()) { setOutput({ error: `Partition key '${primaryPartitionKey}' cannot be empty` }); return; }
+    const pkVal = rowValues["id"];
+    if (!pkVal?.trim()) { setOutput({ error: "Partition key 'id' cannot be empty" }); return; }
     try {
+      setLoadingMsg(`⟳ Envoi à ${coordinatorNode || "un nœud"} — écriture de '${pkVal}'...`);
       const r = await writeData(rowValues, consistencyLevel, keyspaceName, tableName, clusterName);
       setOutput(r);
-      
+
       let backendPlacement = null;
       try {
         const hashesObj = await getBatchHashes([String(pkVal)]);
         if (hashesObj[String(pkVal)] != null) {
-          backendPlacement = simulatePlacement({ 
-            key: String(pkVal), 
-            nodes, 
-            replicationFactor, 
-            precomputedHash: hashesObj[String(pkVal)] 
+          backendPlacement = simulatePlacement({
+            key: String(pkVal), nodes, replicationFactor,
+            precomputedHash: hashesObj[String(pkVal)]
           });
         }
-      } catch (e) {
+      } catch {
         backendPlacement = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
       }
 
@@ -330,9 +389,8 @@ export default function App() {
       if (backendPlacement) {
         setCsvDistribution(prev => [...prev, { rowId: `manual_${Date.now()}`, partitionValue: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, row: rowValues }]);
       }
-      
       fetchCluster();
-      
+
       if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
         const TOTAL_DURATION = 7000;
         const startTime = performance.now();
@@ -345,14 +403,33 @@ export default function App() {
         };
         requestAnimationFrame(animateFlow);
       }
-    } catch (e) { setOutput({ error: e.message }); }
+
+      // Message pédagogique
+      if (coordinatorNode) {
+        setPedaMsg(
+          `Tu t'es connecté à ${coordinatorNode}. Ce nœud a reçu ta requête, calculé le hash de "${pkVal}" et routé l'écriture vers le(s) bon(s) replica(s) — sans être un maître. Essaie avec un autre nœud d'entrée : les données arrivent exactement au même endroit !`
+        );
+      }
+    } catch (e) {
+      setOutput({ error: e.message });
+    } finally {
+      setLoadingMsg(null);
+    }
   };
 
-  // ─── Read with CAP error detection ────────────────────────────────
   const handleRead = useCallback(async (filters = {}) => {
     try {
+      const filterVal = filters[primaryPartitionKey];
+      setLoadingMsg(filterVal ? `⟳ Envoi à ${coordinatorNode || "un nœud"} — lecture de '${filterVal}'...` : "⟳ Lecture en cours...");
       const r = await readData(filters, consistencyLevel, keyspaceName, tableName, clusterName);
       setOutput(r);
+
+      // Message pédagogique
+      if (coordinatorNode && filterVal) {
+        setPedaMsg(
+          `Tu t'es connecté à ${coordinatorNode} pour lire "${filterVal}". Ce nœud a contacté les réplicas responsables de cette clé et retourné la réponse — sans être un point central. Change de nœud d'entrée et relance : le résultat est identique !`
+        );
+      }
     } catch (e) {
       const msg = e.message ?? "";
       const isUnavailable = msg.toLowerCase().includes("unavailable")
@@ -374,21 +451,17 @@ export default function App() {
           }
         }
         setCapError({
-          message: msg,
-          queriedKey: filterVal ?? "(all)",
-          replicationFactor,
-          consistencyLevel,
-          nodes,
-          affectedEntry,
-          deadNodes,
-          nodeDataMap,
+          message: msg, queriedKey: filterVal ?? "(all)",
+          replicationFactor, consistencyLevel, nodes, affectedEntry, deadNodes, nodeDataMap,
         });
       } else {
         setOutput({ error: msg });
       }
+    } finally {
+      setLoadingMsg(null);
     }
   }, [consistencyLevel, keyspaceName, tableName, clusterName, nodes, primaryPartitionKey,
-    csvDistribution, replicationFactor, hashingType, nodeDataMap]);
+    csvDistribution, replicationFactor, hashingType, nodeDataMap, coordinatorNode]);
 
   const parseCsvMeta = useCallback((text) => {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
@@ -435,20 +508,14 @@ export default function App() {
     const errors = [];
     setCsvDistribution([]); setNodeDataMap({});
 
-    // Pre-calculate hashes in one ultra-fast batch request
     const uniqueKeys = [...new Set(dataLines.map(line => {
       const parts = line.split(delim).map(c => c.trim());
       return parts[headers.indexOf(pkCol)];
     }).filter(Boolean))];
-    
-    let hashesObj = {};
-    try {
-      hashesObj = await getBatchHashes(uniqueKeys);
-    } catch (e) {
-      console.error("Batch hash failed", e);
-    }
 
-    // Scale animation speed based on CSV size to prevent massive delays
+    let hashesObj = {};
+    try { hashesObj = await getBatchHashes(uniqueKeys); } catch (e) { console.error("Batch hash failed", e); }
+
     const animDuration = dataLines.length > 50 ? 80 : (dataLines.length > 15 ? 150 : 400);
 
     for (let i = 0; i < dataLines.length; i++) {
@@ -460,17 +527,13 @@ export default function App() {
       const pval = row[pkCol];
       if (!pval) { skipped++; continue; }
       try {
+        setLoadingMsg(`⟳ Importing row ${i + 1}/${dataLines.length} — '${pval}'`);
         await writeData(row, consistencyLevel, ksName, tblName, clusterName);
         imported++;
-        
+
         let backendPlacement = null;
         if (hashesObj[String(pval)] != null) {
-          backendPlacement = simulatePlacement({ 
-            key: String(pval), 
-            nodes, 
-            replicationFactor, 
-            precomputedHash: hashesObj[String(pval)] 
-          });
+          backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, precomputedHash: hashesObj[String(pval)] });
         } else {
           backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
         }
@@ -512,10 +575,7 @@ export default function App() {
           setCsvError(parts.join(" · "));
           return;
         }
-        const { imported, skipped, errors } = await runCsvInsertLoop({
-          headers, dataLines, delim, pkCol: partitionKey,
-          ksName: keyspaceName, tblName: tableName,
-        });
+        const { imported, skipped, errors } = await runCsvInsertLoop({ headers, dataLines, delim, pkCol: partitionKey, ksName: keyspaceName, tblName: tableName });
         fetchCluster();
         setCsvImportResult({ real: true, mode: "mapped", rows_imported: imported, rows_skipped: skipped, errors: errors.slice(0, 5), partition_key: partitionKey, columns_detected: headers });
         setOutput({ real_import: true, mode: "mapped", rows_imported: imported, rows_skipped: skipped });
@@ -524,31 +584,32 @@ export default function App() {
 
       const colsObj = {};
       headers.forEach(h => { colsObj[h] = "text"; });
+      setLoadingMsg(`⟳ Creating keyspace '${keyspaceName}'...`);
       await createKeyspace(replicationFactor, strategy, keyspaceName, clusterName);
+      setLoadingMsg(`⟳ Creating table '${tableName}'...`);
       await createTable(colsObj, [partitionKey], tableName, keyspaceName, clusterName);
-      setColumns(headers.map((h, i) => ({ name: h, type: "text", isPartitionKey: i === headers.indexOf(partitionKey) })));
       setSchemaReady(true);
       setRowValues({});
 
-      const { imported, skipped, errors } = await runCsvInsertLoop({
-        headers, dataLines, delim, pkCol: partitionKey,
-        ksName: keyspaceName, tblName: tableName,
-      });
+      const { imported, skipped, errors } = await runCsvInsertLoop({ headers, dataLines, delim, pkCol: partitionKey, ksName: keyspaceName, tblName: tableName });
       fetchCluster();
       setCsvImportResult({ real: true, mode: "auto", rows_imported: imported, rows_skipped: skipped, errors: errors.slice(0, 5), partition_key: partitionKey, columns_detected: headers });
       setOutput({ real_import: true, mode: "auto_schema", rows_imported: imported, rows_skipped: skipped, schema_created: `${keyspaceName}.${tableName}` });
-    } catch (err) { setCsvError(`Import error: ${err.message}`); }
-    finally { setIsCsvImporting(false); }
+    } catch (err) {
+      setCsvError(`Import error: ${err.message}`);
+    } finally {
+      setIsCsvImporting(false);
+      setLoadingMsg(null);
+    }
   }, [csvFile, partitionKey, parseCsvMeta, nodes, replicationFactor, hashingType,
     schemaReady, columns, consistencyLevel, keyspaceName, tableName, strategy, clusterName,
     runCsvInsertLoop, fetchCluster]);
 
-  // ─── Derived state for right panel badge ──────────────────────────
   const downNodeCount = nodes.filter(n => n.status !== "up" && n.status !== "joining").length;
 
   const sidebarStyle = (open, side) => ({
     position: "absolute", top: 0, [side]: 0, height: "100%", width: SIDEBAR_W, zIndex: 20,
-    background: "#0a0a14", transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
+    background: "#F0F4F8", transition: "transform 0.28s cubic-bezier(0.4,0,0.2,1)",
     transform: open ? "translateX(0)" : side === "left" ? `translateX(-100%)` : `translateX(100%)`,
     ...(side === "left" ? { borderRight: BORDER } : { borderLeft: BORDER }),
   });
@@ -557,18 +618,67 @@ export default function App() {
     padding: "16px 14px", display: "flex", flexDirection: "column", gap: 0, boxSizing: "border-box",
   };
 
+  // Select nœud d'entrée — réutilisé dans Write et Read
+  const NodeEntrySelect = () => (
+    <div style={{ marginBottom: 8 }}>
+      <label style={{ ...lbl, color: ACCENT }}>
+        Nœud d'entrée
+        <span style={{ color: "#5A7A96", fontWeight: 400, marginLeft: 4 }}>— tu te connectes à ce nœud</span>
+      </label>
+      {upNodes.length === 0
+        ? <div style={{ fontSize: 10, color: "#5A7A96", fontStyle: "italic", marginBottom: 4 }}>Aucun nœud UP</div>
+        : (
+          <select
+            style={{ ...inp, marginBottom: 0, border: `1px solid ${ACCENT}`, color: ACCENT, background: "rgba(24,180,200,0.07)", fontWeight: 600 }}
+            value={coordinatorNode}
+            onChange={e => setCoordinatorNode(e.target.value)}
+          >
+            {upNodes.map(n => (
+              <option key={n.id} value={n.id}>{n.id}</option>
+            ))}
+          </select>
+        )
+      }
+    </div>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "#0a0a14", color: "#fff", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
-      <header style={{ height: 48, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", borderBottom: BORDER, background: "rgba(255,255,255,0.02)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "#F0F4F8", color: "#1A2B3C", fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <header style={{ height: 42, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", borderBottom: BORDER, background: "#FFFFFF" }}>
         <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>CassandraEdu</span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: 2 }}>SIMULATOR</span>
-        {anyJoining && <span style={{ fontSize: 10, color: "#f7c76a", marginLeft: 8, animation: "pulse 1.5s ease-in-out infinite" }}>⟳ waiting for Cassandra tokens...</span>}
+        <span style={{ fontSize: 11, color: "#8AA8C0", letterSpacing: 2 }}>SIMULATOR</span>
+
+        {loadingMsg && (
+          <span style={{ fontSize: 10, color: "#f7c76a", marginLeft: 8, animation: "pulse 1.5s ease-in-out infinite" }}>
+            {loadingMsg}
+          </span>
+        )}
+        {!loadingMsg && anyJoining && (
+          <span style={{ fontSize: 10, color: "#f7c76a", marginLeft: 8, animation: "pulse 1.5s ease-in-out infinite" }}>
+            ⟳ waiting for Cassandra tokens...
+          </span>
+        )}
+
         {schemaReady && <span style={{ fontSize: 10, color: "#6af7b8", marginLeft: 8 }}>✓ {keyspaceName}.{tableName}</span>}
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,0.3)", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: "rgba(255,255,255,0.15)" }}>cluster</span>
-          <span style={{ color: ACCENT, fontWeight: 700 }}>{clusterName}</span>
+
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, color: "#8AA8C0" }}>{nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring</span>
+          {/* Bouton reset dans le header */}
+          <button
+            onClick={doReset}
+            title="Reset cluster — removes all nodes and data"
+            style={{
+              fontSize: 10, padding: "3px 10px", cursor: "pointer",
+              background: "rgba(247,106,106,0.10)", border: "1px solid rgba(247,106,106,0.4)",
+              color: "#f76a6a", borderRadius: 5, fontFamily: "inherit", fontWeight: 600,
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(247,106,106,0.25)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(247,106,106,0.10)"}
+          >
+            ⟳ Reset Cluster
+          </button>
         </span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>{nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring</span>
       </header>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
@@ -579,6 +689,7 @@ export default function App() {
             <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
             <div style={sidebarInnerStyle}>
 
+              {/* ── Section Cluster (conservée) ── */}
               <Section title="Cluster">
                 <label style={lbl}>Cluster Name</label>
                 <input
@@ -601,105 +712,17 @@ export default function App() {
                   <option value="fnv1a">FNV-1a</option>
                   <option value="xxhash">xxHash</option>
                 </select>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", lineHeight: 1.5, fontStyle: "italic" }}>
+                <div style={{ fontSize: 9, color: "#8AA8C0", lineHeight: 1.5, fontStyle: "italic" }}>
                   Drag the ring to add nodes.
                 </div>
               </Section>
 
+              {/* ── Section Setup (colonnes fixes, pas de Strategy editable) ── */}
               <Section title="Setup">
                 <label style={lbl}>Keyspace Name</label>
                 <input style={inp} value={keyspaceName} onChange={e => { setKeyspaceName(e.target.value); setSchemaReady(false); }} placeholder="edu_keyspace" />
-                <label style={lbl}>Table Name</label>
-                <input style={inp} value={tableName} onChange={e => { setTableName(e.target.value); setSchemaReady(false); }} placeholder="edu_table" />
-                <label style={lbl}>Columns</label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
-                  {columns.map((col, i) => (
-                    <div key={i} style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                      <input
-                        style={{ flex: 2, boxSizing: "border-box", fontSize: 10, padding: "3px 6px" }}
-                        placeholder="col name" value={col.name}
-                        onChange={e => { updateColumn(i, "name", e.target.value); setSchemaReady(false); }}
-                      />
-                      <select
-                        style={{ flex: 1.5, fontSize: 10, padding: "3px 2px" }}
-                        value={col.type}
-                        onChange={e => { updateColumn(i, "type", e.target.value); setSchemaReady(false); }}
-                      >
-                        {COLUMN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <button
-                        title={col.isPartitionKey ? "Remove partition key" : "Set as partition key"}
-                        onClick={() => { togglePartitionKey(i); setSchemaReady(false); }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.background = col.isPartitionKey ? "rgba(32,178,170,0.5)" : "rgba(32,178,170,0.15)";
-                          e.currentTarget.style.color = ACCENT;
-                          e.currentTarget.style.borderColor = ACCENT;
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.background = col.isPartitionKey ? "rgba(32,178,170,0.3)" : "rgba(255,255,255,0.05)";
-                          e.currentTarget.style.color = col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.3)";
-                          e.currentTarget.style.borderColor = col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.07)";
-                        }}
-                        style={{ width: 22, height: 22, flexShrink: 0, padding: 0, fontSize: 9, cursor: "pointer", background: col.isPartitionKey ? "rgba(32,178,170,0.3)" : "rgba(255,255,255,0.05)", border: col.isPartitionKey ? `1px solid ${ACCENT}` : BORDER, color: col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.3)", borderRadius: 4, lineHeight: 1, transition: "background 0.15s, color 0.15s, border-color 0.15s" }}>PK</button>
-                      {columns.length > 1 && (
-                        <button
-                          title="Remove column"
-                          onClick={() => { removeColumn(i); setSchemaReady(false); }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.background = "rgba(247,106,106,0.3)";
-                            e.currentTarget.style.borderColor = "#f76a6a";
-                            e.currentTarget.style.transform = "scale(1.15)";
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.background = "rgba(247,106,106,0.1)";
-                            e.currentTarget.style.borderColor = "rgba(247,106,106,0.3)";
-                            e.currentTarget.style.transform = "scale(1)";
-                          }}
-                          style={{ width: 18, height: 18, flexShrink: 0, padding: 0, fontSize: 11, cursor: "pointer", background: "rgba(247,106,106,0.1)", border: "1px solid rgba(247,106,106,0.3)", color: "#f76a6a", borderRadius: 4, lineHeight: 1, transition: "background 0.15s, border-color 0.15s, transform 0.1s" }}>×</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => { addColumn(); setSchemaReady(false); }} style={{ ...btn, fontSize: 10, opacity: 0.7 }}>+ Add Column</button>
-                {partitionKeys.length > 0 && (
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginBottom: 6 }}>
-                    PK: <span style={{ color: ACCENT }}>{partitionKeys.join(", ")}</span>
-                  </div>
-                )}
-                <button
-                  style={{ ...btn, background: "rgba(32,178,170,0.15)", border: `1px solid ${ACCENT}`, color: ACCENT, fontWeight: 700, transition: "background 0.15s, box-shadow 0.15s, transform 0.1s" }}
-                  onClick={handleSetup}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = "rgba(32,178,170,0.3)";
-                    e.currentTarget.style.boxShadow = "0 0 10px rgba(32,178,170,0.25)";
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = "rgba(32,178,170,0.15)";
-                    e.currentTarget.style.boxShadow = "none";
-                    e.currentTarget.style.transform = "translateY(0)";
-                  }}
-                  title={`Creates keyspace '${keyspaceName}' (${strategy}, RF=${replicationFactor}), then table '${tableName}'`}
-                >⚙ Apply Schema</button>
-                {schemaReady && (
-                  <div style={{ fontSize: 9, color: "#6af7b8", marginTop: 2, marginBottom: 4, textAlign: "center" }}>✓ Schema ready</div>
-                )}
-              </Section>
 
-              <Section title="Data Entry">
-                {!schemaReady && (
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 8, fontStyle: "italic" }}>Complete Setup first.</div>
-                )}
-
-                <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={lbl}>Consistency</label>
-                    <select style={{ ...inp, marginBottom: 0 }} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
-                      <option value="ONE">ONE</option>
-                      <option value="QUORUM">QUORUM</option>
-                      <option value="ALL">ALL</option>
-                    </select>
-                  </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                   <div style={{ flex: 1 }}>
                     <label style={lbl}>Strategy</label>
                     <select style={{ ...inp, marginBottom: 0 }} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
@@ -717,6 +740,44 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Colonnes fixes — affichage readonly */}
+                <div style={{ background: "rgba(24,180,200,0.06)", border: "1px solid rgba(24,180,200,0.18)", borderRadius: 6, padding: "6px 10px", marginBottom: 8, fontSize: 10, color: "#8AA8C0", lineHeight: 1.8 }}>
+                  <span style={{ color: ACCENT, fontWeight: 700 }}>Columns (fixed) :</span><br />
+                  <span style={{ color: ACCENT }}>id</span> <span style={{ opacity: 0.5 }}>(text) [PK]</span>
+                  {"  "}
+                  <span style={{ color: "rgba(255,255,255,0.6)" }}>value</span> <span style={{ opacity: 0.5 }}>(text)</span>
+                </div>
+
+                <button
+                  style={{ ...btn, background: loadingMsg ? "rgba(247,198,106,0.1)" : "rgba(32,178,170,0.15)", border: `1px solid ${loadingMsg ? "#f7c76a" : ACCENT}`, color: loadingMsg ? "#f7c76a" : ACCENT, fontWeight: 700, opacity: loadingMsg ? 0.7 : 1, transition: "background 0.15s, box-shadow 0.15s, transform 0.1s" }}
+                  onClick={handleSetup}
+                  disabled={!!loadingMsg}
+                  onMouseEnter={e => { if (!loadingMsg) { e.currentTarget.style.background = "rgba(32,178,170,0.3)"; e.currentTarget.style.boxShadow = "0 0 10px rgba(32,178,170,0.25)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(32,178,170,0.15)"; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
+                  title={`Creates keyspace '${keyspaceName}' (${strategy}, RF=${replicationFactor}), then table '${tableName}'`}
+                >{loadingMsg ? loadingMsg : "⚙ Apply Schema"}</button>
+                {schemaReady && (
+                  <div style={{ fontSize: 9, color: "#6af7b8", marginTop: 2, marginBottom: 4, textAlign: "center" }}>✓ Schema ready</div>
+                )}
+              </Section>
+
+              {/* ── Section Data Entry ── */}
+              <Section title="Data Entry">
+                {!schemaReady && (
+                  <div style={{ fontSize: 10, color: "#8AA8C0", marginBottom: 8, fontStyle: "italic" }}>Complete Setup first.</div>
+                )}
+
+                <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lbl}>Consistency</label>
+                    <select style={{ ...inp, marginBottom: 0 }} value={consistencyLevel} onChange={e => setConsistencyLevel(e.target.value)}>
+                      <option value="ONE">ONE</option>
+                      <option value="QUORUM">QUORUM</option>
+                      <option value="ALL">ALL</option>
+                    </select>
+                  </div>
+                </div>
+
                 <Tabs
                   tabs={[{ id: "manual", label: "Manual" }, { id: "csv", label: "CSV Import" }]}
                   active={dataTab}
@@ -725,45 +786,61 @@ export default function App() {
 
                 {dataTab === "manual" && (
                   <>
+                    {/* Message pédagogique */}
+                    <PedaMessage msg={pedaMsg} onClose={() => setPedaMsg("")} />
+
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 2 }}>WRITE</div>
+
+                    {/* Nœud d'entrée */}
+                    <NodeEntrySelect />
+
                     {schemaReady ? (
-                      columns.map(col => (
-                        <div key={col.name}>
-                          <label style={{ ...lbl, color: col.isPartitionKey ? ACCENT : "rgba(255,255,255,0.4)" }}>
-                            {col.name} <span style={{ fontSize: 9, opacity: 0.6 }}>({col.type}){col.isPartitionKey ? " [PK]" : ""}</span>
-                          </label>
-                          <input
-                            style={inp} placeholder={`${col.name}...`}
-                            value={rowValues[col.name] ?? ""}
-                            onChange={e => setRowValues(prev => ({ ...prev, [col.name]: e.target.value }))}
-                          />
-                        </div>
-                      ))
+                      <>
+                        <label style={{ ...lbl, color: ACCENT }}>id <span style={{ fontSize: 9, opacity: 0.6 }}>(text) [PK]</span></label>
+                        <input
+                          style={inp} placeholder="id..."
+                          value={rowValues["id"] ?? ""}
+                          onChange={e => setRowValues(prev => ({ ...prev, id: e.target.value }))}
+                        />
+                        <label style={lbl}>value <span style={{ fontSize: 9, opacity: 0.6 }}>(text)</span></label>
+                        <input
+                          style={inp} placeholder="value..."
+                          value={rowValues["value"] ?? ""}
+                          onChange={e => setRowValues(prev => ({ ...prev, value: e.target.value }))}
+                        />
+                      </>
                     ) : (
-                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginBottom: 8, fontStyle: "italic" }}>No schema yet.</div>
+                      <div style={{ fontSize: 10, color: "#8AA8C0", marginBottom: 8, fontStyle: "italic" }}>No schema yet.</div>
                     )}
-                    <button style={{ ...btn, opacity: schemaReady ? 1 : 0.4 }} onClick={handleWrite}>Write to Cassandra</button>
+
+                    <button
+                      style={{ ...btn, opacity: schemaReady && !loadingMsg ? 1 : 0.4 }}
+                      onClick={handleWrite}
+                      disabled={!!loadingMsg}
+                    >
+                      {loadingMsg && loadingMsg.includes("Writing") ? loadingMsg : "Write to Cassandra"}
+                    </button>
+
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 8 }}>READ</div>
-                    <label style={lbl}>Filter by partition key</label>
+
+                    {/* Nœud d'entrée pour le read aussi */}
+                    <NodeEntrySelect />
+
+                    <label style={lbl}>Filter by partition key (id)</label>
                     <input
-                      style={inp} placeholder={primaryPartitionKey || "partition key value"}
+                      style={inp} placeholder="id value"
                       value={filterKey} onChange={e => setFilterKey(e.target.value)}
                     />
-                    <button style={btn} onClick={() => {
-                      const filters = filterKey.trim() && primaryPartitionKey ? { [primaryPartitionKey]: filterKey.trim() } : {};
-                      handleRead(filters);
-                    }}>Read from Cassandra</button>
-                    <button style={{ ...btn, opacity: 0.7 }} onClick={() => handleRead({})}>Read All</button>
-                    {filterKey && primaryPartitionKey && (
-                      <>
-                        <button style={btn} onClick={() =>
-                          getEndpoints(filterKey, keyspaceName, tableName, clusterName).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                        }>Get Endpoints for key</button>
-                        <button style={btn} onClick={() =>
-                          explainPartition(filterKey, keyspaceName, tableName, clusterName).then(r => setOutput(r)).catch(e => setOutput({ error: e.message }))
-                        }>Explain Partition</button>
-                      </>
-                    )}
+                    <button
+                      style={{ ...btn, opacity: loadingMsg ? 0.4 : 1 }}
+                      disabled={!!loadingMsg}
+                      onClick={() => {
+                        const filters = filterKey.trim() ? { id: filterKey.trim() } : {};
+                        handleRead(filters);
+                      }}
+                    >
+                      {loadingMsg && loadingMsg.includes("Reading") ? loadingMsg : "Read from Cassandra"}
+                    </button>
                   </>
                 )}
 
@@ -787,7 +864,7 @@ export default function App() {
                           const mismatch = schemaReady && !columns.map(col => col.name).includes(c);
                           return (
                             <span key={c}>
-                              <span style={{ color: "rgba(255,255,255,0.3)" }}>{i + 1}.</span>{" "}
+                              <span style={{ color: "#8AA8C0" }}>{i + 1}.</span>{" "}
                               <span style={{ color: mismatch ? "#f76a6a" : "rgba(255,255,255,0.7)" }}>{c}{mismatch ? " ✗" : ""}</span>
                               {i < csvColumns.length - 1 ? "  " : ""}
                             </span>
@@ -803,15 +880,13 @@ export default function App() {
                         </select>
                       </>
                     )}
-                    <style>
-                      {`
-                        @keyframes pulseOrange {
-                          0% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
-                          50% { background: rgba(247,198,106,0.4); border-color: rgba(247,198,106,1); box-shadow: 0 0 15px rgba(247,198,106,0.6); }
-                          100% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
-                        }
-                      `}
-                    </style>
+                    <style>{`
+                      @keyframes pulseOrange {
+                        0% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
+                        50% { background: rgba(247,198,106,0.4); border-color: rgba(247,198,106,1); box-shadow: 0 0 15px rgba(247,198,106,0.6); }
+                        100% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
+                      }
+                    `}</style>
                     <button
                       style={{
                         ...btn,
@@ -825,7 +900,9 @@ export default function App() {
                       onClick={onImportCsv}
                       disabled={isCsvImporting}
                     >
-                      {isCsvImporting ? "⏳ Importing..." : (schemaReady ? "Import CSV" : "Import & Auto-Create Schema")}
+                      {isCsvImporting
+                        ? (loadingMsg || "⏳ Importing...")
+                        : (schemaReady ? "Import CSV" : "Import & Auto-Create Schema")}
                     </button>
                     {csvError && (
                       <div style={{ background: "rgba(247,106,106,0.08)", border: "1px solid rgba(247,106,106,0.3)", borderRadius: 5, padding: "6px 8px", fontSize: 10, color: "#f76a6a", marginBottom: 4 }}>⚠ {csvError}</div>
@@ -835,35 +912,20 @@ export default function App() {
                         <div style={{ color: ACCENT, fontWeight: 700, marginBottom: 4 }}>
                           {csvImportResult.mode === "auto" ? "✓ Auto-schema + import" : "✓ Import Cassandra"}
                         </div>
-                        <div><span style={{ color: "rgba(255,255,255,0.4)" }}>Inserted: </span><strong style={{ color: "#6af7b8" }}>{csvImportResult.rows_imported}</strong></div>
+                        <div><span style={{ color: "#5A7A96" }}>Inserted: </span><strong style={{ color: "#6af7b8" }}>{csvImportResult.rows_imported}</strong></div>
                         {csvImportResult.rows_skipped > 0 && (
-                          <div><span style={{ color: "rgba(255,255,255,0.4)" }}>Skipped: </span><strong style={{ color: "#f7c76a" }}>{csvImportResult.rows_skipped}</strong></div>
+                          <div><span style={{ color: "#5A7A96" }}>Skipped: </span><strong style={{ color: "#f7c76a" }}>{csvImportResult.rows_skipped}</strong></div>
                         )}
                         {csvImportResult.errors?.length > 0 && (
                           <div style={{ color: "#f76a6a", fontSize: 9, marginTop: 4 }}>
                             {csvImportResult.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
                           </div>
                         )}
-                        <div><span style={{ color: "rgba(255,255,255,0.4)" }}>PK: </span><strong>{csvImportResult.partition_key}</strong></div>
+                        <div><span style={{ color: "#5A7A96" }}>PK: </span><strong>{csvImportResult.partition_key}</strong></div>
                       </div>
                     )}
                   </>
                 )}
-              </Section>
-
-              <Section title="Cluster Reset">
-                <button
-                  style={{ background: "rgba(247,106,106,0.15)", borderColor: "#f76a6a", color: "#f76a6a", ...btn }}
-                  onClick={() => {
-                    deleteCluster(clusterName).then(() => {
-                      clusterInitializedRef.current = false;
-                      setNodes([]); setLeavingNodes([]); setClusterData({}); setNodeDataMap({});
-                      usedNamesRef.current.clear(); setOutput(null);
-                      setCsvFile(null); setCsvColumns([]); setCsvDistribution([]); setCsvImportResult(null); setCsvError("");
-                      setRowValues({}); setSchemaReady(false); prevGossipRef.current = {};
-                    }).catch(e => setOutput({ error: e.message }));
-                  }}
-                >Delete Cluster</button>
               </Section>
 
             </div>
@@ -871,8 +933,8 @@ export default function App() {
         </div>
 
         {/* ─── Main canvas ──────────────────────────────────────────── */}
-        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 20px", gap: 16, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", display: "flex", gap: 24 }}>
+        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 14px", gap: 16, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "#8AA8C0", display: "flex", gap: 24 }}>
             <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
             <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
             <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
@@ -889,7 +951,7 @@ export default function App() {
                     <div key={n} style={{ flex: 1, minWidth: 100 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                         <span style={{ fontWeight: 700, fontSize: 10, color: ACCENT }}>{n}</span>
-                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{count}</span>
+                        <span style={{ fontSize: 10, color: "#5A7A96" }}>{count}</span>
                       </div>
                       <div style={{ border: BORDER, borderRadius: 4, overflow: "hidden" }}>
                         <div style={{ width: `${pct}%`, background: ACCENT, height: 8, transition: "width .4s", borderRadius: 4 }} />
@@ -911,9 +973,8 @@ export default function App() {
             />
           </div>
 
-          {/* ─── Bottom panels: Output + Hints + ReadRepair ──────────── */}
+          {/* ─── Bottom panels ─────────────────────────────────────── */}
           <div style={{ width: "100%", maxWidth: 900 }}>
-            {/* Tab bar */}
             <div style={{ display: "flex", gap: 2, marginBottom: 10, borderBottom: "1px solid rgba(32,178,170,0.15)" }}>
               {[
                 { id: "output", label: "Output" },
@@ -925,7 +986,7 @@ export default function App() {
                     flex: 1, padding: "6px 4px", fontSize: 10, cursor: "pointer",
                     background: rightTab === t.id ? "rgba(32,178,170,0.15)" : "transparent",
                     border: "none", borderBottom: rightTab === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
-                    color: rightTab === t.id ? ACCENT : t.id === "hints" && downNodeCount > 0 ? "#f59e0b" : "rgba(255,255,255,0.4)",
+                    color: rightTab === t.id ? ACCENT : t.id === "hints" && downNodeCount > 0 ? "#f59e0b" : "#5A7A96",
                     fontWeight: rightTab === t.id ? 700 : 400,
                     fontFamily: "inherit", letterSpacing: 1, transition: "all 0.15s",
                   }}>
@@ -934,7 +995,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* Tab content */}
             {rightTab === "output" && (
               <div style={{ ...card, marginBottom: 0 }}>
                 <div style={h3}>Output</div>
@@ -946,21 +1006,16 @@ export default function App() {
 
             {rightTab === "hints" && (
               <HintedHandoffPanel
-                clusterName={clusterName}
-                nodes={nodes}
-                getHints={getHints}
-                startNode={handleStartNode}
+                clusterName={clusterName} nodes={nodes}
+                getHints={getHints} startNode={handleStartNode}
               />
             )}
 
             {rightTab === "repair" && (
               <ReadRepairPanel
-                clusterName={clusterName}
-                nodes={nodes}
-                readData={readData}
-                keyspaceName={keyspaceName}
-                tableName={tableName}
-                consistencyLevel={consistencyLevel}
+                clusterName={clusterName} nodes={nodes}
+                readData={readData} keyspaceName={keyspaceName}
+                tableName={tableName} consistencyLevel={consistencyLevel}
                 getRepairStats={getRepairStats}
               />
             )}
@@ -968,12 +1023,8 @@ export default function App() {
         </main>
       </div>
 
-      {/* ─── CAP Error Modal ──────────────────────────────────────── */}
       {capError && (
-        <CAPErrorModal
-          error={capError}
-          onClose={() => setCapError(null)}
-        />
+        <CAPErrorModal error={capError} onClose={() => setCapError(null)} />
       )}
     </div>
   );

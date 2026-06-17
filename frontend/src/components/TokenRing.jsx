@@ -41,7 +41,6 @@ const PARTITIONERS = {
 function getPartitionerFromNodes(nodes) {
   let hasNegative = false;
   let hasHuge = false;
-
   for (const node of nodes) {
     if (!node.tokens || node.tokens.length === 0) continue;
     for (const tok of node.tokens) {
@@ -52,10 +51,9 @@ function getPartitionerFromNodes(nodes) {
       } catch { /* skip */ }
     }
   }
-
   if (hasHuge) return "md5";
   if (hasNegative) return "murmur3";
-  return null; // Ambiguous, fallback needed
+  return null;
 }
 
 function darkenColor(hex, percent = 20) {
@@ -69,8 +67,7 @@ function darkenColor(hex, percent = 20) {
 }
 
 const PALETTE = { x: 55, y: 645 };
-const NODE_COLORS = ["#20B2AA", "#f76a6a", "#6af7b8", "#f7c76a", "#6ab8f7", "#f76ac8", "#a8f76a", "#f7a86a"];
-
+const NODE_COLORS = ["#1287A8", "#00D4AA", "#6AB8F7", "#f7c76a", "#f76a6a", "#a78bfa", "#6af7b8", "#f7a86a"];
 function makeMath(p) {
   const { MIN, RANGE } = p;
   function tokToAngle(tok) {
@@ -108,9 +105,44 @@ function fmtToken(t) {
 
 function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
+// ── Gossip ring-arc helpers ──────────────────────────────────────────────────
+
+function ringPoint(theta) {
+  return {
+    x: CX + RING_R * Math.cos(theta),
+    y: CY + RING_R * Math.sin(theta),
+  };
+}
+
+function ringArcPath(startAngle, endAngle, clockwise) {
+  const start = ringPoint(startAngle);
+  const end   = ringPoint(endAngle);
+  const delta = clockwise
+    ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI)
+    : (startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI);
+  const largeArc = delta > Math.PI ? 1 : 0;
+  const sweep    = clockwise ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`;
+}
+
+function ringArcPoint(startAngle, endAngle, t, clockwise) {
+  let delta = clockwise
+    ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI)
+    : (startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI);
+  const angle = clockwise
+    ? startAngle + delta * t
+    : startAngle - delta * t;
+  return {
+    x: CX + RING_R * Math.cos(angle),
+    y: CY + RING_R * Math.sin(angle),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 export default function TokenRing({
   nodes = [], leavingNodes = [], cluster = {}, nodeDataMap = {},
-  onAddNode, onRemoveNode, disabled = false,
+  onAddNode, onRemoveNode, onStopNode, disabled = false,
   csvDistribution = [], writeFlowAnim = null, gossipAnim = null,
   hashingType = null,
 }) {
@@ -129,18 +161,15 @@ export default function TokenRing({
   const prevDistributionLengthRef = useRef(0);
 
   const partitionerKey = useMemo(() => {
-    // If there are nodes in the cluster, we MUST use their actual partitioner math
-    // so they don't visually squish or snap to 0 degrees when the dropdown changes.
     const activeNodes = nodes.filter(n => n.tokens && n.tokens.length > 0);
-    if (activeNodes.length > 0) {
-      return getPartitionerFromNodes(activeNodes);
-    }
-    // If the cluster is empty, use the dropdown's hashing type
+    if (activeNodes.length > 0) return getPartitionerFromNodes(activeNodes);
     if (hashingType && PARTITIONERS[hashingType]) return hashingType;
     return "murmur3";
   }, [nodes, hashingType]);
+
   const partitioner = PARTITIONERS[partitionerKey] || PARTITIONERS["murmur3"];
   const { tokToAngle, angleToTok, ringXY } = useMemo(() => makeMath(partitioner), [partitioner]);
+
   const nodeColorMap = useMemo(() => {
     const map = {};
     nodes.forEach((n, i) => { map[n.id] = NODE_COLORS[i % NODE_COLORS.length]; });
@@ -237,33 +266,24 @@ export default function TokenRing({
   const nodePositions = useMemo(() => {
     const posMap = {};
     const placed = [];
-    // We sort by joining status so joining nodes get placed last and don't push stable nodes out of position
     const nodesToPlace = [...nodes].sort((a, b) => (a.status === "joining" ? 1 : 0) - (b.status === "joining" ? 1 : 0));
-
     nodesToPlace.forEach(node => {
       const primaryTok = getPrimaryToken(node);
       let { x, y } = ringXY(primaryTok);
-
       let overlapping = true;
       let attempt = 0;
       const baseAngle = Math.atan2(y - CY, x - CX);
-
-      // If a node is within 2.2 radii of an already placed node, push it along the ring
       while (overlapping && attempt < 20) {
         overlapping = placed.some(p => Math.sqrt((p.x - x) ** 2 + (p.y - y) ** 2) < NODE_R * 2.2);
         if (overlapping) {
           attempt++;
-          // Shift left and right alternatingly: +1, -1, +2, -2, etc.
           const shiftMultiplier = (attempt % 2 === 1 ? 1 : -1) * Math.ceil(attempt / 2);
-          // Angle offset to move roughly NODE_R * 2.2 along the ring circumference
           const angleOffset = shiftMultiplier * ((NODE_R * 2.2) / RING_R);
           const angle = baseAngle + angleOffset;
-          // Keep the radius exactly at RING_R so they stay ON the ring
           x = CX + RING_R * Math.cos(angle);
           y = CY + RING_R * Math.sin(angle);
         }
       }
-
       posMap[node.id] = { x, y };
       placed.push({ id: node.id, x, y });
     });
@@ -286,10 +306,10 @@ export default function TokenRing({
         </defs>
 
         {/* Ring */}
-        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(200,210,220,0.18)" strokeWidth={2.5} />
-        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(46,69,96,0.5)" strokeWidth={2.5} />
+        <circle cx={CX} cy={CY} r={RING_R} fill="none" stroke="rgba(46,69,96,0.15)" strokeWidth={8} />
 
-        <text x={CX + RING_R + 10} y={CY - RING_R - 10} fontSize={8} fill="rgba(255,255,255,0.2)" textAnchor="start">
+        <text x={CX + RING_R + 10} y={CY - RING_R - 10} fontSize={8} fill="rgba(18,135,168,0.6)" textAnchor="start">
           {partitioner.name}Partitioner
         </text>
 
@@ -301,8 +321,8 @@ export default function TokenRing({
           const ly = CY + (RING_R + 22) * Math.sin(angle);
           return (
             <g key={i}>
-              <line x1={x} y1={y} x2={CX + (RING_R - 8) * Math.cos(angle)} y2={CY + (RING_R - 8) * Math.sin(angle)} stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
-              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill="rgba(255,255,255,0.15)">{tick.label}</text>
+              <line x1={x} y1={y} x2={CX + (RING_R - 8) * Math.cos(angle)} y2={CY + (RING_R - 8) * Math.sin(angle)} stroke="rgba(46,69,96,0.4)" strokeWidth={1} />
+              <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={8} fill="rgba(18,135,168,0.5)">{tick.label}</text>
             </g>
           );
         })}
@@ -329,7 +349,7 @@ export default function TokenRing({
             const start = { x: CX + RING_R * Math.cos(startAngle), y: CY + RING_R * Math.sin(startAngle) };
             const end = { x: CX + RING_R * Math.cos(endAngle), y: CY + RING_R * Math.sin(endAngle) };
             const large = delta > Math.PI ? 1 : 0;
-            return <path key={`arc-${entry.nodeId}-${String(entry.tok)}`} d={`M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`} fill="none" stroke={color} strokeWidth={8} opacity={0.22} style={{ pointerEvents: "none" }} />;
+            return <path key={`arc-${entry.nodeId}-${String(entry.tok)}`} d={`M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${large} 1 ${end.x} ${end.y}`} fill="none" stroke={color} strokeWidth={8} opacity={0.45} style={{ pointerEvents: "none" }} />;
           });
         })()}
 
@@ -340,7 +360,7 @@ export default function TokenRing({
           return node.tokens.map((tok, i) => {
             try {
               const pos = ringXY(BigInt(String(tok)));
-              return <circle key={`tok-${node.id}-${i}`} cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5} fill={color} opacity={i === 0 ? 0.9 : 0.5} style={{ pointerEvents: "none" }} />;
+              return <circle key={`tok-${node.id}-${i}`} cx={pos.x} cy={pos.y} r={i === 0 ? 5 : 3.5} fill={color} opacity={i === 0 ? 1 : 0.7} style={{ pointerEvents: "none" }} />;
             } catch { return null; }
           });
         })}
@@ -380,15 +400,15 @@ export default function TokenRing({
               <g style={{ pointerEvents: "none" }}>
                 {rawOpacity > 0 && (
                   <g opacity={rawOpacity}>
-                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#0a0a14" stroke="rgba(250,204,21,0.4)" strokeWidth={1} />
+                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#162840" stroke="rgba(250,204,21,0.4)" strokeWidth={1} />
                     <text x={CX} y={CY - 4} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="rgba(255,255,255,0.5)" letterSpacing={1}>RAW KEY</text>
                     <text x={CX} y={CY + 10} textAnchor="middle" dominantBaseline="middle" fontSize={12} fontWeight="700" fill="#facc15">"{rawKey}"</text>
                   </g>
                 )}
                 {hashLabelOpacity > 0 && (
                   <g opacity={hashLabelOpacity}>
-                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#0a0a14" stroke="rgba(56,189,248,0.5)" strokeWidth={1} />
-                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="rgba(255,255,255,0.4)" letterSpacing={2}>HASH(key)</text>
+                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#162840" stroke="rgba(56,189,248,0.5)" strokeWidth={1} />
+                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="rgba(200,220,240,0.8)" letterSpacing={2}>HASH(key)</text>
                     <text x={CX} y={CY + 8} textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight="700" fill="#38bdf8">{hashLabel}</text>
                   </g>
                 )}
@@ -426,87 +446,107 @@ export default function TokenRing({
           } catch { return null; }
         })()}
 
-        {/* ── Gossip animation en phases: SOURCE → INFO → PROPAGATION ── */}
+        {/* ── Gossip animation : paquets sur l'arc du ring (tout en sens horaire) ── */}
         {gossipAnim && (() => {
           try {
             const { from, to, fromData, toData, progress: p } = gossipAnim;
+
             const fromPos = nodePositions[from.id] || ringXY(getPrimaryToken(from));
-            const toPos = nodePositions[to.id] || ringXY(getPrimaryToken(to));
+            const toPos   = nodePositions[to.id]   || ringXY(getPrimaryToken(to));
 
-            // Phases
-            const P1 = 0.25;  // Affiche le nœud source + ses infos gossip
-            const P2 = 0.55;  // Paquet voyage de from → to
-            const P3 = 1.0;   // Réception + ripple sur le nœud destinataire
-
-            // Phase 0→P1: label source apparait
-            const srcOpacity = p < P1 ? easeOut(p / P1) : p < P2 ? 1 - easeOut((p - P1) / (P2 - P1)) : 0;
-
-            // Phase P1→P2: paquet voyage
-            const travelPhase = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
-            const px2 = fromPos.x + (toPos.x - fromPos.x) * travelPhase;
-            const py2 = fromPos.y + (toPos.y - fromPos.y) * travelPhase;
-            const showPacket = p >= P1 && p < P2;
-
-            // Phase P2→P3: réception
-            const recvOpacity = p >= P2 ? easeOut((p - P2) / (P3 - P2)) : 0;
-            const showRipple = p >= P2;
+            const fromAngle = Math.atan2(fromPos.y - CY, fromPos.x - CX);
+            const toAngle   = Math.atan2(toPos.y - CY, toPos.x - CX);
 
             const GOSSIP_COLOR = "#a78bfa";
+            const ACK_COLOR    = "#6af7b8";
+
+            const P1 = 0.15;
+            const P2 = 0.40;
+            const P3 = 0.55;
+            const P4 = 0.85;
+            const P5 = 1.0;
+
+            // Aller A→B : sens horaire (CW)
+            const goArcPath   = ringArcPath(fromAngle, toAngle,   true);
+            // Retour B→A : sens anti-horaire (CCW) — visuellement le paquet
+            // rebrousse chemin sur le même arc, donnant l'impression de
+            // repartir en sens horaire vers A
+            const backArcPath = ringArcPath(toAngle,   fromAngle, false);
+
+            const goT   = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
+            const backT = p < P3 ? 0 : p < P4 ? easeOut((p - P3) / (P4 - P3)) : 1;
+
+            // Aller CW, retour CCW (= rebrousse sur le même arc court)
+            const goPoint   = ringArcPoint(fromAngle, toAngle,   goT,   true);
+            const backPoint = ringArcPoint(toAngle,   fromAngle, backT, false);
+
+            const srcOpacity    = p < P1 ? easeOut(p / P1)
+                                : p < P2 ? 1
+                                : p < P3 ? 1 - easeOut((p - P2) / (P3 - P2))
+                                : 0;
+
+            const showGoPacket  = p >= P1 && p < P2;
+            const recvBOpacity  = p < P2  ? 0
+                                : p < P3  ? easeOut((p - P2) / (P3 - P2))
+                                : p < P4  ? Math.max(0, 1 - easeOut((p - P3) / (P4 - P3)))
+                                : 0;
+            const showRippleB   = p >= P2 && p < P3 + 0.05;
+            const showBackPacket = p >= P3 && p < P4;
+            const recvAOpacity  = p >= P4 ? easeOut((p - P4) / (P5 - P4)) : 0;
+            const showRippleA   = p >= P4;
 
             return (
               <g style={{ pointerEvents: "none" }}>
-                {/* Phase 1 : label SOURCE avec heartbeat */}
+
+                {/* Phase 1 : label SOURCE */}
                 {srcOpacity > 0 && (
                   <g opacity={srcOpacity}>
                     <rect
                       x={fromPos.x - 60} y={fromPos.y - NODE_R - 48}
                       width={120} height={40} rx={5}
-                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}66`} strokeWidth={1}
+                      fill="#162840" stroke={`${GOSSIP_COLOR}66`} strokeWidth={1}
                     />
-                    <text x={fromPos.x} y={fromPos.y - NODE_R - 38} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>GOSSIP FROM</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 38} textAnchor="middle" fontSize={8} fill="rgba(200,220,240,0.8)" letterSpacing={1}>GOSSIP FROM</text>
                     <text x={fromPos.x} y={fromPos.y - NODE_R - 24} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{from.id}</text>
-                    <text x={fromPos.x} y={fromPos.y - NODE_R - 12} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.35)">
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 12} textAnchor="middle" fontSize={8} fill="rgba(200,220,240,0.7)">
                       gen:{fromData?.generation ?? "?"} · hb:{fromData?.heartbeat ?? "?"}
                     </text>
                   </g>
                 )}
 
-                {/* Ligne de trajet */}
-                {showPacket && (
-                  <line x1={fromPos.x} y1={fromPos.y} x2={px2} y2={py2}
-                    stroke={GOSSIP_COLOR} strokeWidth={1} opacity={0.25} strokeDasharray="3 3" />
+                {/* ALLER A→B : arc CW */}
+                {showGoPacket && (
+                  <path d={goArcPath} stroke={GOSSIP_COLOR} strokeWidth={1} opacity={0.3}
+                    strokeDasharray="4 3" fill="none" />
                 )}
 
-                {/* Paquet gossip en voyage */}
-                {showPacket && (
+                {/* Paquet ALLER en transit */}
+                {showGoPacket && (
                   <g>
-                    <circle cx={px2} cy={py2} r={5} fill={GOSSIP_COLOR} opacity={0.9}>
+                    <circle cx={goPoint.x} cy={goPoint.y} r={5} fill={GOSSIP_COLOR} opacity={0.9}>
                       <animate attributeName="r" values="4;6;4" dur="0.4s" repeatCount="indefinite" />
                     </circle>
-                    {/* Label flottant sur le paquet */}
-                    <rect x={px2 - 28} y={py2 - 22} width={56} height={16} rx={3} fill="#0a0a14" opacity={0.85} />
-                    <text x={px2} y={py2 - 13} textAnchor="middle" fontSize={7} fill={GOSSIP_COLOR}>
+                    <rect x={goPoint.x - 28} y={goPoint.y - 22} width={56} height={16} rx={3} fill="#162840" opacity={0.85} />
+                    <text x={goPoint.x} y={goPoint.y - 13} textAnchor="middle" fontSize={7} fill={GOSSIP_COLOR}>
                       hb:{fromData?.heartbeat ?? "?"}
                     </text>
                   </g>
                 )}
 
-                {/* Phase 3 : réception sur le nœud destinataire */}
-                {showRipple && (
-                  <g opacity={recvOpacity}>
-                    {/* Ripple d'arrivée */}
+                {/* Phase 2 : réception sur B */}
+                {showRippleB && (
+                  <g opacity={recvBOpacity}>
                     <circle cx={toPos.x} cy={toPos.y} r={NODE_R + 6}
                       fill="none" stroke={GOSSIP_COLOR} strokeWidth={2}>
                       <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 22} dur="0.7s" fill="freeze" />
                       <animate attributeName="opacity" values="0.8;0" dur="0.7s" fill="freeze" />
                     </circle>
-                    {/* Label destinataire avec info reçue */}
                     <rect
                       x={toPos.x - 65} y={toPos.y - NODE_R - 52}
                       width={130} height={44} rx={5}
-                      fill="#0a0a14" stroke={`${GOSSIP_COLOR}88`} strokeWidth={1.5}
+                      fill="#162840" stroke={`${GOSSIP_COLOR}88`} strokeWidth={1.5}
                     />
-                    <text x={toPos.x} y={toPos.y - NODE_R - 43} textAnchor="middle" fontSize={8} fill="rgba(255,255,255,0.4)" letterSpacing={1}>RECEIVED BY</text>
+                    <text x={toPos.x} y={toPos.y - NODE_R - 43} textAnchor="middle" fontSize={8} fill="rgba(200,220,240,0.8)" letterSpacing={1}>RECEIVED BY</text>
                     <text x={toPos.x} y={toPos.y - NODE_R - 29} textAnchor="middle" fontSize={10} fontWeight="700" fill={GOSSIP_COLOR}>{to.id}</text>
                     <text x={toPos.x} y={toPos.y - NODE_R - 16} textAnchor="middle" fontSize={7.5} fill="#6af7b8">
                       ✓ gen:{toData?.generation ?? "?"} · hb:{toData?.heartbeat ?? "?"}
@@ -517,10 +557,41 @@ export default function TokenRing({
                   </g>
                 )}
 
-                {/* Point d'arrivée fixe */}
-                {p >= P2 && (
-                  <circle cx={toPos.x} cy={toPos.y} r={5} fill={GOSSIP_COLOR} opacity={Math.min(recvOpacity, 0.8)} />
+                {/* RETOUR B→A : arc CCW (rebrousse sur le même arc court) */}
+                {showBackPacket && (
+                  <path d={backArcPath} stroke={ACK_COLOR} strokeWidth={1} opacity={0.3}
+                    strokeDasharray="4 3" fill="none" />
                 )}
+
+                {/* Paquet RETOUR / ACK en transit */}
+                {showBackPacket && (
+                  <g>
+                    <circle cx={backPoint.x} cy={backPoint.y} r={5} fill={ACK_COLOR} opacity={0.9}>
+                      <animate attributeName="r" values="4;6;4" dur="0.4s" repeatCount="indefinite" />
+                    </circle>
+                    <rect x={backPoint.x - 24} y={backPoint.y - 22} width={48} height={16} rx={3} fill="#162840" opacity={0.85} />
+                    <text x={backPoint.x} y={backPoint.y - 13} textAnchor="middle" fontSize={7} fill={ACK_COLOR}>ACK</text>
+                  </g>
+                )}
+
+                {/* Phase finale : réception ACK sur A */}
+                {showRippleA && (
+                  <g opacity={recvAOpacity}>
+                    <circle cx={fromPos.x} cy={fromPos.y} r={NODE_R + 6}
+                      fill="none" stroke={ACK_COLOR} strokeWidth={2}>
+                      <animate attributeName="r" from={NODE_R + 4} to={NODE_R + 22} dur="0.7s" fill="freeze" />
+                      <animate attributeName="opacity" values="0.8;0" dur="0.7s" fill="freeze" />
+                    </circle>
+                    <rect
+                      x={fromPos.x - 55} y={fromPos.y - NODE_R - 48}
+                      width={110} height={36} rx={5}
+                      fill="#162840" stroke={`${ACK_COLOR}88`} strokeWidth={1.5}
+                    />
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 38} textAnchor="middle" fontSize={8} fill="rgba(200,220,240,0.8)" letterSpacing={1}>ACK RECEIVED</text>
+                    <text x={fromPos.x} y={fromPos.y - NODE_R - 24} textAnchor="middle" fontSize={10} fontWeight="700" fill={ACK_COLOR}>{from.id} ✓</text>
+                  </g>
+                )}
+
               </g>
             );
           } catch { return null; }
@@ -542,7 +613,6 @@ export default function TokenRing({
             const prev = sortedNodes[(idx - 1 + sortedNodes.length) % sortedNodes.length];
             return `${fmtToken(getPrimaryToken(prev))} → ${fmtToken(primaryTok)}`;
           })();
-          // Highlight si ce nœud est actif dans le gossip
           const isGossipActive = gossipAnim && (gossipAnim.from?.id === node.id || gossipAnim.to?.id === node.id);
 
           return (
@@ -587,9 +657,18 @@ export default function TokenRing({
                 </g>
               )}
               {isHovered && tooltipVisible && !isJoining && (
-                <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()} style={{ cursor: "pointer" }}>
-                  <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
-                  <text x={pos.x + 17} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                <g style={{ cursor: "pointer" }}>
+                  {node.status === "up" && (
+                    <g onClick={e => { e.stopPropagation(); onStopNode?.(node.id); }} onMouseDown={e => e.stopPropagation()}>
+                      <circle cx={pos.x + 17} cy={pos.y + 17} r={9} fill="#f59e0b" opacity={0.9} />
+                      <rect x={pos.x + 14.5} y={pos.y + 14.5} width={2} height={5} fill="white" style={{ pointerEvents: "none" }} />
+                      <rect x={pos.x + 17.5} y={pos.y + 14.5} width={2} height={5} fill="white" style={{ pointerEvents: "none" }} />
+                    </g>
+                  )}
+                  <g onClick={e => { e.stopPropagation(); onRemoveNode?.(node.id); }} onMouseDown={e => e.stopPropagation()}>
+                    <circle cx={pos.x + (node.status === "up" ? 37 : 17)} cy={pos.y + 17} r={9} fill="#f76a6a" opacity={0.9} />
+                    <text x={pos.x + (node.status === "up" ? 37 : 17)} y={pos.y + 17} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="white" style={{ pointerEvents: "none" }}>×</text>
+                  </g>
                 </g>
               )}
             </g>
@@ -625,8 +704,8 @@ export default function TokenRing({
           </g>
         )}
 
-        <text x={CX} y={CY - 10} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.2)" letterSpacing={2}>TOKEN RING</text>
-        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.15)">{nodes.length} node{nodes.length !== 1 ? "s" : ""}</text>
+        <text x={CX} y={CY - 10} textAnchor="middle" fontSize={10} fill="rgba(18,135,168,0.6)" letterSpacing={2}>TOKEN RING</text>
+        <text x={CX} y={CY + 8} textAnchor="middle" fontSize={9} fill="rgba(18,135,168,0.5)">{nodes.length} node{nodes.length !== 1 ? "s" : ""}</text>
         {nodes.length === 0 && <text x={CX} y={CY + 26} textAnchor="middle" fontSize={8} fill="rgba(32,178,170,0.5)">drag + to start</text>}
       </svg>
 

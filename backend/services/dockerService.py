@@ -129,7 +129,7 @@ def create_cassandra_node(node_name: str, cluster_name: str, partitioner: str = 
         "MAX_HEAP_SIZE": "512M",
         "HEAP_NEWSIZE": "100M",
         "CASSANDRA_RING_DELAY_MS": "5000",
-        "CASSANDRA_NUM_TOKENS": "1",
+        "CASSANDRA_NUM_TOKENS": "16",
     }
     if initial_token:
         env["CASSANDRA_INITIAL_TOKEN"] = initial_token
