@@ -1,24 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const ACCENT = "#20B2AA";
-const AMBER  = "#f59e0b";
-const GREEN  = "#22c55e";
-const RED    = "#ef4444";
-const BLUE   = "#60a5fa";
+const AMBER = "#f59e0b";
+const GREEN = "#22c55e";
+const RED = "#ef4444";
+const BLUE = "#60a5fa";
 const PURPLE = "#a78bfa";
 
-const card = { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
-const h3s  = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, margin: "0 0 10px" };
+const card = {
+  background: "#FFFFFF",
+  border: "1px solid #D6E0EA",
+  borderRadius: 10,
+  padding: "12px 14px",
+  marginBottom: 10
+};
+const h3s = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, margin: "0 0 10px" };
 const mono = { fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 11 };
 
 // ─── Phase labels ────────────────────────────────────────────────────────────
 const PHASES = [
-  { id: "idle",    label: "Idle" },
-  { id: "digest",  label: "① Digest Request" },
+  { id: "idle", label: "Idle" },
+  { id: "digest", label: "① Digest Request" },
   { id: "compare", label: "② Compare Digests" },
-  { id: "fetch",   label: "③ Full Data Fetch" },
-  { id: "repair",  label: "④ Write Repair" },
-  { id: "done",    label: "✓ Repaired" },
+  { id: "fetch", label: "③ Full Data Fetch" },
+  { id: "repair", label: "④ Write Repair" },
+  { id: "done", label: "✓ Repaired" },
 ];
 
 // ─── Animated SVG scene ──────────────────────────────────────────────────────
@@ -52,14 +58,14 @@ function ReadRepairSVG({ nodes, phase, staleNodeId, progress }) {
           .rr-glow  { animation: rrGlow 0.8s ease-in-out infinite; }
         `}</style>
         <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill="rgba(255,255,255,0.2)" />
+          <path d="M0,0 L6,3 L0,6 Z" fill="#5A7A96" />
         </marker>
       </defs>
 
       {/* Lines from coordinator to replicas */}
       {replicas.map((r, i) => (
         <line key={i} x1={coord.x + 22} y1={coord.y} x2={r.x - 22} y2={r.y}
-          stroke={r.stale && phase === "repair" ? RED + "55" : "rgba(255,255,255,0.08)"}
+          stroke={r.stale && phase === "repair" ? RED + "55" : "rgba(26,43,60,0.10)"}
           strokeWidth={r.stale && phase === "repair" ? 1.5 : 1}
           strokeDasharray="4 3" />
       ))}
@@ -70,7 +76,7 @@ function ReadRepairSVG({ nodes, phase, staleNodeId, progress }) {
       <text x={coord.x} y={coord.y - 2} textAnchor="middle" dominantBaseline="middle"
         fontSize={8} fontWeight={700} fill={ACCENT}>{coord.label}</text>
       <text x={coord.x} y={coord.y + 9} textAnchor="middle" dominantBaseline="middle"
-        fontSize={6.5} fill="rgba(255,255,255,0.3)">coord</text>
+        fontSize={6.5} fill="#8AA8C0">coord</text>
 
       {/* Digest badge */}
       {(phase === "compare" || phase === "fetch" || phase === "repair") && (
@@ -102,7 +108,7 @@ function ReadRepairSVG({ nodes, phase, staleNodeId, progress }) {
             {/* Digest label on each node during digest phase */}
             {(phase === "digest" || phase === "compare") && (
               <text x={r.x + 24} y={r.y} textAnchor="start" dominantBaseline="middle"
-                fontSize={6.5} fill={r.stale ? RED + "99" : "rgba(255,255,255,0.2)"}>
+                fontSize={6.5} fill={r.stale ? RED + "99" : "#8AA8C0"}>
                 {r.stale ? "d=0xAA…" : "d=0xFF…"}
               </text>
             )}
@@ -147,17 +153,18 @@ function PhaseBar({ phase }) {
   return (
     <div style={{ display: "flex", gap: 2, marginBottom: 10 }}>
       {PHASES.filter(p => p.id !== "idle").map((p, i) => {
-        const done    = i < idx;
+        const done = i < idx;
         const current = PHASES[idx]?.id === p.id;
         return (
           <div key={p.id} style={{ flex: 1, textAlign: "center" }}>
             <div style={{
               height: 3, borderRadius: 2,
-              background: done ? GREEN : current ? AMBER : "rgba(255,255,255,0.08)",
+              background: done ? GREEN : current ? AMBER : "rgba(26,43,60,0.10)",
               marginBottom: 3, transition: "background 0.3s",
             }} />
             <span style={{
-              fontSize: 7, color: done ? GREEN : current ? AMBER : "rgba(255,255,255,0.2)",
+              fontSize: 7,
+              color: done ? GREEN : current ? AMBER : "#5A7A96",
               fontWeight: current ? 700 : 400, transition: "color 0.3s",
               display: "block", lineHeight: 1.2,
             }}>{p.label}</span>
@@ -191,19 +198,19 @@ export default function ReadRepairPanel({
   consistencyLevel,
   getRepairStats,
 }) {
-  const [phase, setPhase]         = useState("idle");
-  const [progress, setProgress]   = useState(0);
+  const [phase, setPhase] = useState("idle");
+  const [progress, setProgress] = useState(0);
   const [staleNodeId, setStaleNodeId] = useState(null);
   const [repairLog, setRepairLog] = useState([]);
-  const [stats, setStats]         = useState({ total: 0, repairs: [] });
+  const [stats, setStats] = useState({ total: 0, repairs: [] });
   const [filterKey, setFilterKey] = useState("");
-  const [running, setRunning]     = useState(false);
-  const [error, setError]         = useState("");
-  const mountedRef                = useRef(true);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const mountedRef = useRef(true);
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  const pushLog = useCallback((msg, color = "rgba(255,255,255,0.5)") => {
+  const pushLog = useCallback((msg, color = "#5A7A96") => {
     const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
     setRepairLog(prev => [{ ts, msg, color }, ...prev].slice(0, 50));
   }, []);
@@ -244,7 +251,7 @@ export default function ReadRepairPanel({
         setPhase(phaseId);
         setProgress(0);
         const start = performance.now();
-        const tick  = (now) => {
+        const tick = (now) => {
           const t = Math.min((now - start) / durationMs, 1);
           if (mountedRef.current) setProgress(t);
           if (t < 1) requestAnimationFrame(tick);
@@ -308,7 +315,7 @@ export default function ReadRepairPanel({
       </div>
 
       {/* Educational blurb */}
-      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", lineHeight: 1.6, marginBottom: 10, padding: "8px 10px", background: "rgba(96,165,250,0.05)", borderLeft: `2px solid ${BLUE}44`, borderRadius: 4 }}>
+      <div style={{ fontSize: 10, color: "#5A7A96", lineHeight: 1.6, marginBottom: 10, padding: "8px 10px", background: "rgba(96,165,250,0.05)", borderLeft: `2px solid ${BLUE}44`, borderRadius: 4 }}>
         During a <span style={{ color: BLUE }}>QUORUM read</span>, the coordinator sends <em>digest requests</em> to all replicas. If digests <span style={{ color: RED }}>don't match</span>, it fetches full data and <span style={{ color: GREEN }}>writes the latest version</span> back to stale replicas — transparent to the client.
       </div>
 
@@ -331,8 +338,13 @@ export default function ReadRepairPanel({
           onChange={e => setFilterKey(e.target.value)}
           placeholder="partition key to read (optional)"
           style={{
-            flex: 1, padding: "6px 10px", fontSize: 10, background: "rgba(0,0,0,0.3)",
-            border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.7)",
+            flex: 1,
+            padding: "6px 10px",
+            fontSize: 10,
+            background: "#FFFFFF",
+            border: "1px solid #D6E0EA",
+            borderRadius: 6,
+            color: "#1A2B3C",
             fontFamily: "inherit",
           }}
         />
@@ -351,21 +363,21 @@ export default function ReadRepairPanel({
       </div>
 
       {aliveNodes.length < 2 && (
-        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 6 }}>
+        <div style={{ fontSize: 9, color: "#5A7A96", marginTop: 6 }}>
           Need at least 2 UP nodes to simulate read repair.
         </div>
       )}
 
       {/* Recent repairs list */}
       {stats.repairs.length > 0 && (
-        <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>
+        <div style={{ marginTop: 12, borderTop: "1px solid rgba(26,43,60,0.08)", paddingTop: 8 }}>
           <div style={{ fontSize: 9, letterSpacing: 1, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>RECENT REPAIRS</div>
           {stats.repairs.slice(0, 5).map((r, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, color: "rgba(255,255,255,0.4)", marginBottom: 3, ...mono }}>
+            <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, color: "#5A7A96", marginBottom: 3, ...mono }}>
               <span style={{ color: GREEN }}>✓</span>
               <span style={{ color: AMBER, minWidth: 70 }}>{r.key}</span>
               <span>→ {r.stale_node}</span>
-              <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.2)" }}>
+              <span style={{ marginLeft: "auto", color: "#8AA8C0" }}>
                 {r.repaired_at ? new Date(r.repaired_at).toLocaleTimeString() : ""}
               </span>
             </div>
@@ -375,7 +387,7 @@ export default function ReadRepairPanel({
 
       {/* Activity log */}
       {repairLog.length > 0 && (
-        <div style={{ marginTop: 10, maxHeight: 120, overflowY: "auto", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>
+        <div style={{ marginTop: 10, maxHeight: 120, overflowY: "auto", borderTop: "1px solid rgba(26,43,60,0.08)", paddingTop: 8 }}>
           {repairLog.map((entry, i) => (
             <div key={i} style={{ fontSize: 9, color: entry.color, display: "flex", gap: 8, marginBottom: 2, ...mono }}>
               <span style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>{entry.ts}</span>
