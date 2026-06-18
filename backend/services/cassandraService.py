@@ -15,13 +15,15 @@ CONSISTENCY_MAP = {
     "ALL":    ConsistencyLevel.ALL,
 }
 
+
 def _ensure_backend_on_network(network_name: str):
     """Attach the current backend container to the Cassandra cluster network if not already attached."""
     import socket
     hostname = socket.gethostname()
     try:
         backend_container = client.containers.get(hostname)
-        backend_networks = backend_container.attrs.get("NetworkSettings", {}).get("Networks", {})
+        backend_networks = backend_container.attrs.get(
+            "NetworkSettings", {}).get("Networks", {})
         if network_name not in backend_networks:
             network = client.networks.get(network_name)
             network.connect(backend_container)
@@ -31,33 +33,16 @@ def _ensure_backend_on_network(network_name: str):
 
 
 def get_session(cluster_name: str):
-    network_name = f"cassandra-net-{cluster_name}"
-    all_containers = client.containers.list(all=True)
-
-    # Ensure the backend container can reach the Cassandra cluster network
-    _ensure_backend_on_network(network_name)
-
-    contact_points = []
-    for c in all_containers:
-        c.reload()
-        networks = c.attrs.get("NetworkSettings", {}).get("Networks", {})
-        if network_name in networks and c.status == "running":
-            ip = networks[network_name].get("IPAddress", "")
-            if ip:
-                contact_points.append(ip)
-
-    if not contact_points:
-        raise Exception(f"No running nodes found for cluster '{cluster_name}'")
-
-    print(f"Connecting to {cluster_name} via {contact_points} :9042")
+    print("Connecting to Cassandra via localhost:9042")
 
     cluster = Cluster(
-        contact_points=contact_points,
+        contact_points=["127.0.0.1"],
         port=9042,
         load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
         protocol_version=5,
         connect_timeout=30,
     )
+
     session = cluster.connect()
     session.default_timeout = 30
     return session
@@ -83,7 +68,8 @@ def create_keyspace(cluster_name, keyspace_name, replication_factor=1, strategy=
 def list_keyspaces(cluster_name: str):
     session = get_session(cluster_name)
     rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
-    system_keyspaces = {"system", "system_auth", "system_distributed", "system_schema", "system_traces"}
+    system_keyspaces = {"system", "system_auth",
+                        "system_distributed", "system_schema", "system_traces"}
     return [row.keyspace_name for row in rows if row.keyspace_name not in system_keyspaces]
 
 
@@ -104,7 +90,8 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
             # Schéma différent → DROP + recreate
             print(f"Schema mismatch for '{keyspace_name}.{table_name}': "
                   f"existing={existing_cols}, wanted={wanted_cols}. Dropping and recreating.")
-            session.execute(f"DROP TABLE IF EXISTS {keyspace_name}.{table_name}", timeout=60.0)
+            session.execute(
+                f"DROP TABLE IF EXISTS {keyspace_name}.{table_name}", timeout=60.0)
     except Exception as e:
         # En cas d'erreur de lecture du schéma, on continue — le CREATE IF NOT EXISTS
         # échouera proprement si nécessaire
@@ -112,7 +99,8 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
 
     # ── Crée la table (avec les bonnes colonnes) ───────────────────────────────
     columns_cql = ", ".join(f"{col} {dtype}" for col, dtype in columns.items())
-    partition = f"({', '.join(partition_key)})" if len(partition_key) > 1 else partition_key[0]
+    partition = f"({', '.join(partition_key)})" if len(
+        partition_key) > 1 else partition_key[0]
     if clustering_key:
         primary_key = f"PRIMARY KEY ({partition}, {', '.join(clustering_key)})"
     else:
@@ -125,7 +113,8 @@ def create_table(cluster_name, keyspace_name, table_name, columns, partition_key
         )
     """
     session.execute(cql, timeout=60.0)
-    print(f"Table '{keyspace_name}.{table_name}' created with columns: {list(columns.keys())}")
+    print(
+        f"Table '{keyspace_name}.{table_name}' created with columns: {list(columns.keys())}")
     return {
         "keyspace": keyspace_name,
         "table": table_name,
@@ -147,7 +136,8 @@ def list_tables(cluster_name: str, keyspace_name: str):
 def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency="QUORUM"):
     try:
         session = get_session(cluster_name)
-        consistency = CONSISTENCY_MAP.get(write_consistency, ConsistencyLevel.QUORUM)
+        consistency = CONSISTENCY_MAP.get(
+            write_consistency, ConsistencyLevel.QUORUM)
 
         processed_data = {}
         for k, v in data.items():
@@ -161,7 +151,8 @@ def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency
         statement = SimpleStatement(cql, consistency_level=consistency)
         session.execute(statement, values)
 
-        print(f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
+        print(
+            f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
         return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
 
     except Unavailable as e:
@@ -183,18 +174,21 @@ def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency
                     "reason": "Replication factor too low or not enough nodes UP",
                     "tip": "Increase replication_factor or use a lower consistency level"
                 })
-        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
+        raise HTTPException(status_code=503, detail={
+                            "error": "No hosts available", "details": str(e)})
 
 
 def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consistency="QUORUM"):
     try:
         session = get_session(cluster_name)
-        consistency = CONSISTENCY_MAP.get(read_consistency, ConsistencyLevel.QUORUM)
+        consistency = CONSISTENCY_MAP.get(
+            read_consistency, ConsistencyLevel.QUORUM)
 
         cql = f"SELECT * FROM {keyspace_name}.{table_name}"
         values = []
         if filters:
-            where_clause = " AND ".join(f"{col} = %s" for col in filters.keys())
+            where_clause = " AND ".join(
+                f"{col} = %s" for col in filters.keys())
             cql += f" WHERE {where_clause}"
             values = list(filters.values())
 
@@ -202,7 +196,8 @@ def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consis
         rows = session.execute(statement, values)
 
         result = [dict(row._asdict()) for row in rows]
-        print(f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
+        print(
+            f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
         return result
 
     except Unavailable as e:
@@ -225,4 +220,5 @@ def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consis
                     "reason": "Replication factor too low or not enough nodes UP",
                     "tip": "Increase replication_factor or use a lower consistency level"
                 })
-        raise HTTPException(status_code=503, detail={"error": "No hosts available", "details": str(e)})
+        raise HTTPException(status_code=503, detail={
+                            "error": "No hosts available", "details": str(e)})

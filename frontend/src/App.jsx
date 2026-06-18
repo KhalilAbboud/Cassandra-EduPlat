@@ -132,6 +132,7 @@ export default function App() {
   const primaryPartitionKey = "id";
 
   const [schemaReady, setSchemaReady] = useState(false);
+  const [schemaMode, setSchemaMode] = useState("manual");
   const [dataTab, setDataTab] = useState("manual");
   const [rightTab, setRightTab] = useState("output");
 
@@ -718,53 +719,121 @@ export default function App() {
               </Section>
 
               {/* ── Section Setup (colonnes fixes, pas de Strategy editable) ── */}
-              <Section title="Setup">
-                <label style={lbl}>Keyspace Name</label>
-                <input style={inp} value={keyspaceName} onChange={e => { setKeyspaceName(e.target.value); setSchemaReady(false); }} placeholder="edu_keyspace" />
+              <Section title="Schema Mode">
+                <div className="mode-switcher">
+                  <button
+                    className={`mode-choice ${schemaMode === "manual" ? "active" : ""}`}
+                    onClick={() => {
+                      setSchemaMode("manual");
+                      setDataTab("manual");
+                    }}
+                  >
+                    <strong>Manual</strong>
+                    <span>Create schema step by step</span>
+                  </button>
 
-                <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={lbl}>Strategy</label>
-                    <select style={{ ...inp, marginBottom: 0 }} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
-                      <option value="SimpleStrategy">Simple</option>
-                      <option value="NetworkTopologyStrategy">Network</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={lbl}>Rep Factor</label>
-                    <select style={{ ...inp, marginBottom: 0 }} value={replicationFactor} onChange={e => { setReplicationFactor(Number(e.target.value)); setSchemaReady(false); }}>
-                      <option value={1}>RF = 1</option>
-                      <option value={2}>RF = 2</option>
-                      <option value={3}>RF = 3</option>
-                    </select>
-                  </div>
+                  <button
+                    className={`mode-choice ${schemaMode === "csv" ? "active" : ""}`}
+                    onClick={() => {
+                      setSchemaMode("csv");
+                      setDataTab("csv");
+                    }}
+                  >
+                    <strong>CSV Auto</strong>
+                    <span>Import CSV and create schema</span>
+                  </button>
                 </div>
 
-                {/* Colonnes fixes — affichage readonly */}
-                <div style={{ background: "rgba(24,180,200,0.06)", border: "1px solid rgba(24,180,200,0.18)", borderRadius: 6, padding: "6px 10px", marginBottom: 8, fontSize: 10, color: "#8AA8C0", lineHeight: 1.8 }}>
-                  <span style={{ color: ACCENT, fontWeight: 700 }}>Columns (fixed) :</span><br />
-                  <span style={{ color: ACCENT }}>id</span> <span style={{ opacity: 0.5 }}>(text) [PK]</span>
-                  {"  "}
-                  <span style={{ color: "rgba(255,255,255,0.6)" }}>value</span> <span style={{ opacity: 0.5 }}>(text)</span>
-                </div>
+                {schemaMode === "manual" && (
+                  <>
+                    <div className="ux-help-box">
+                      Manual mode: choose keyspace, strategy and RF before writing data.
+                    </div>
 
-                <button
-                  style={{ ...btn, background: loadingMsg ? "rgba(247,198,106,0.1)" : "rgba(32,178,170,0.15)", border: `1px solid ${loadingMsg ? "#f7c76a" : ACCENT}`, color: loadingMsg ? "#f7c76a" : ACCENT, fontWeight: 700, opacity: loadingMsg ? 0.7 : 1, transition: "background 0.15s, box-shadow 0.15s, transform 0.1s" }}
-                  onClick={handleSetup}
-                  disabled={!!loadingMsg}
-                  onMouseEnter={e => { if (!loadingMsg) { e.currentTarget.style.background = "rgba(32,178,170,0.3)"; e.currentTarget.style.boxShadow = "0 0 10px rgba(32,178,170,0.25)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(32,178,170,0.15)"; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "translateY(0)"; }}
-                  title={`Creates keyspace '${keyspaceName}' (${strategy}, RF=${replicationFactor}), then table '${tableName}'`}
-                >{loadingMsg ? loadingMsg : "⚙ Apply Schema"}</button>
-                {schemaReady && (
-                  <div style={{ fontSize: 9, color: "#6af7b8", marginTop: 2, marginBottom: 4, textAlign: "center" }}>✓ Schema ready</div>
+                    <label style={lbl}>Keyspace Name</label>
+                    <input
+                      style={inp}
+                      value={keyspaceName}
+                      onChange={e => {
+                        setKeyspaceName(e.target.value);
+                        setSchemaReady(false);
+                      }}
+                      placeholder="edu_keyspace"
+                    />
+
+                    <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={lbl}>Strategy</label>
+                        <select
+                          style={{ ...inp, marginBottom: 0 }}
+                          value={strategy}
+                          onChange={e => {
+                            setStrategy(e.target.value);
+                            setSchemaReady(false);
+                          }}
+                        >
+                          <option value="SimpleStrategy">Simple</option>
+                          <option value="NetworkTopologyStrategy">Network</option>
+                        </select>
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <label style={lbl}>Replication Factor</label>
+                        <select
+                          style={{ ...inp, marginBottom: 0 }}
+                          value={replicationFactor}
+                          onChange={e => {
+                            setReplicationFactor(Number(e.target.value));
+                            setSchemaReady(false);
+                          }}
+                        >
+                          <option value={1}>RF = 1</option>
+                          <option value={2}>RF = 2</option>
+                          <option value={3}>RF = 3</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="schema-preview">
+                      <strong>Fixed table:</strong><br />
+                      <span>id</span> text [PK] · <span>value</span> text
+                    </div>
+
+                    <button
+                      style={{ ...btn }}
+                      onClick={handleSetup}
+                      disabled={!!loadingMsg}
+                    >
+                      {loadingMsg ? loadingMsg : "Create Manual Schema"}
+                    </button>
+
+                    {schemaReady && (
+                      <div className="success-mini">
+                        ✓ Schema ready: {keyspaceName}.{tableName}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {schemaMode === "csv" && (
+                  <div className="ux-help-box csv">
+                    CSV mode: no manual setup required. Upload a CSV, choose the partition key, then import.
+                  </div>
                 )}
               </Section>
 
               {/* ── Section Data Entry ── */}
               <Section title="Data Entry">
-                {!schemaReady && (
-                  <div style={{ fontSize: 10, color: "#8AA8C0", marginBottom: 8, fontStyle: "italic" }}>Complete Setup first.</div>
+                {!schemaReady && schemaMode === "manual" && (
+                  <div className="warning-mini">
+                    Create the manual schema first.
+                  </div>
+                )}
+
+                {!schemaReady && schemaMode === "csv" && (
+                  <div className="success-mini">
+                    CSV will create the schema automatically.
+                  </div>
                 )}
 
                 <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
@@ -778,11 +847,21 @@ export default function App() {
                   </div>
                 </div>
 
-                <Tabs
-                  tabs={[{ id: "manual", label: "Manual" }, { id: "csv", label: "CSV Import" }]}
-                  active={dataTab}
-                  onChange={setDataTab}
-                />
+                {schemaMode === "manual" && (
+                  <Tabs
+                    tabs={[{ id: "manual", label: "Manual Data" }]}
+                    active={dataTab}
+                    onChange={setDataTab}
+                  />
+                )}
+
+                {schemaMode === "csv" && (
+                  <Tabs
+                    tabs={[{ id: "csv", label: "CSV Auto Import" }]}
+                    active={dataTab}
+                    onChange={setDataTab}
+                  />
+                )}
 
                 {dataTab === "manual" && (
                   <>
@@ -858,14 +937,14 @@ export default function App() {
                     </div>
                     <input type="file" accept=".csv,text/csv" style={{ ...inp, fontSize: 10 }} onChange={onFileChange} />
                     {csvColumns.length > 0 && (
-                      <div style={{ background: "rgba(32,178,170,0.05)", border: "1px solid rgba(32,178,170,0.15)", borderRadius: 5, padding: "6px 8px", marginBottom: 6, fontSize: 9, color: "rgba(255,255,255,0.5)", lineHeight: 1.7 }}>
+                      <div style={{ background: "rgba(32,178,170,0.05)", border: "1px solid rgba(32,178,170,0.15)", borderRadius: 5, padding: "6px 8px", marginBottom: 6, fontSize: 9, color: "#1A2B3C", lineHeight: 1.7 }}>
                         <span style={{ color: ACCENT, fontWeight: 700 }}>Columns:</span><br />
                         {csvColumns.map((c, i) => {
                           const mismatch = schemaReady && !columns.map(col => col.name).includes(c);
                           return (
                             <span key={c}>
                               <span style={{ color: "#8AA8C0" }}>{i + 1}.</span>{" "}
-                              <span style={{ color: mismatch ? "#f76a6a" : "rgba(255,255,255,0.7)" }}>{c}{mismatch ? " ✗" : ""}</span>
+                              <span style={{ color: mismatch ? "#f76a6a" : "#1A2B3C" }}>{c}{mismatch ? " ✗" : ""}</span>
                               {i < csvColumns.length - 1 ? "  " : ""}
                             </span>
                           );
@@ -892,7 +971,7 @@ export default function App() {
                         ...btn,
                         background: isCsvImporting ? "rgba(247,198,106,0.2)" : (csvFile && partitionKey && nodes.length > 0 ? "rgba(32,178,170,0.15)" : "rgba(255,255,255,0.03)"),
                         border: isCsvImporting ? "1px solid #f7c76a" : (csvFile && partitionKey && nodes.length > 0 ? `1px solid ${ACCENT}` : BORDER),
-                        color: isCsvImporting ? "#f7c76a" : (csvFile && partitionKey && nodes.length > 0 ? ACCENT : "rgba(255,255,255,0.3)"),
+                        color: isCsvImporting ? "#f7c76a" : (csvFile && partitionKey && nodes.length > 0 ? ACCENT : "#1A2B3C"),
                         fontWeight: 700,
                         animation: isCsvImporting ? "pulseOrange 1.5s infinite ease-in-out" : "none",
                         transition: isCsvImporting ? "none" : "background 0.15s, border-color 0.15s, color 0.15s",
@@ -933,8 +1012,8 @@ export default function App() {
         </div>
 
         {/* ─── Main canvas ──────────────────────────────────────────── */}
-        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "16px 14px", gap: 16, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "#8AA8C0", display: "flex", gap: 24 }}>
+        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "1px 4px", gap: 16, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "#8AA8C0", display: "flex", gap: 24, marginBottom: -10, }}>
             <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
             <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
             <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
@@ -963,7 +1042,8 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ width: "100%", maxWidth: 900 }}>
+          <div style={{ width: "100%", maxWidth: 650, marginTop: -10 }}>
+
             <TokenRing
               nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
               nodeDataMap={nodeDataMap} onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
@@ -971,10 +1051,11 @@ export default function App() {
               writeFlowAnim={writeFlowAnim} gossipAnim={gossipAnim}
               hashingType={hashingType}
             />
+
           </div>
 
           {/* ─── Bottom panels ─────────────────────────────────────── */}
-          <div style={{ width: "100%", maxWidth: 900 }}>
+          <div style={{ width: "100%", maxWidth: 900, marginTop: -90 }}>
             <div style={{ display: "flex", gap: 2, marginBottom: 10, borderBottom: "1px solid rgba(32,178,170,0.15)" }}>
               {[
                 { id: "output", label: "Output" },
@@ -983,12 +1064,26 @@ export default function App() {
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}
                   style={{
-                    flex: 1, padding: "6px 4px", fontSize: 10, cursor: "pointer",
-                    background: rightTab === t.id ? "rgba(32,178,170,0.15)" : "transparent",
-                    border: "none", borderBottom: rightTab === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
+                    flex: 1,
+                    height: 34,
+                    padding: "0 12px",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    background: rightTab === t.id ? "rgba(24,180,200,0.18)" : "transparent",
+                    border: "1px solid transparent",
+                    borderBottom: rightTab === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
+                    borderRadius: "8px 8px 0 0",
                     color: rightTab === t.id ? ACCENT : t.id === "hints" && downNodeCount > 0 ? "#f59e0b" : "#5A7A96",
-                    fontWeight: rightTab === t.id ? 700 : 400,
-                    fontFamily: "inherit", letterSpacing: 1, transition: "all 0.15s",
+                    fontWeight: rightTab === t.id ? 700 : 500,
+                    fontFamily: "inherit",
+                    letterSpacing: 1,
+                    transition: "all 0.15s",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "auto",
+                    position: "relative",
+                    zIndex: 5
                   }}>
                   {t.label}
                 </button>
@@ -999,8 +1094,15 @@ export default function App() {
               <div style={{ ...card, marginBottom: 0 }}>
                 <div style={h3}>Output</div>
                 {output
-                  ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify(output, null, 2)}</div>
-                  : <span style={{ opacity: 0.3, fontSize: 11 }}>No output yet.</span>}
+                  ? <div style={{
+                    fontSize: 10,
+                    maxHeight: 300,
+                    overflow: "auto",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    color: "#EDF2F7"
+                  }}>{JSON.stringify(output, null, 2)}</div>
+                  : <span style={{ opacity: 0.5, fontSize: 11, color: "#EDF2F7" }}>No output yet.</span>}
               </div>
             )}
 

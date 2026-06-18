@@ -66,7 +66,7 @@ function darkenColor(hex, percent = 20) {
   return "#" + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
-const PALETTE = { x: 55, y: 645 };
+const PALETTE = { x: 55, y: 55 };
 const NODE_COLORS = ["#1287A8", "#00D4AA", "#6AB8F7", "#f7c76a", "#f76a6a", "#a78bfa", "#6af7b8", "#f7a86a"];
 function makeMath(p) {
   const { MIN, RANGE } = p;
@@ -116,12 +116,12 @@ function ringPoint(theta) {
 
 function ringArcPath(startAngle, endAngle, clockwise) {
   const start = ringPoint(startAngle);
-  const end   = ringPoint(endAngle);
+  const end = ringPoint(endAngle);
   const delta = clockwise
     ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI)
     : (startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI);
   const largeArc = delta > Math.PI ? 1 : 0;
-  const sweep    = clockwise ? 1 : 0;
+  const sweep = clockwise ? 1 : 0;
   return `M ${start.x} ${start.y} A ${RING_R} ${RING_R} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`;
 }
 
@@ -452,13 +452,13 @@ export default function TokenRing({
             const { from, to, fromData, toData, progress: p } = gossipAnim;
 
             const fromPos = nodePositions[from.id] || ringXY(getPrimaryToken(from));
-            const toPos   = nodePositions[to.id]   || ringXY(getPrimaryToken(to));
+            const toPos = nodePositions[to.id] || ringXY(getPrimaryToken(to));
 
             const fromAngle = Math.atan2(fromPos.y - CY, fromPos.x - CX);
-            const toAngle   = Math.atan2(toPos.y - CY, toPos.x - CX);
+            const toAngle = Math.atan2(toPos.y - CY, toPos.x - CX);
 
             const GOSSIP_COLOR = "#a78bfa";
-            const ACK_COLOR    = "#6af7b8";
+            const ACK_COLOR = "#6af7b8";
 
             const P1 = 0.15;
             const P2 = 0.40;
@@ -467,33 +467,33 @@ export default function TokenRing({
             const P5 = 1.0;
 
             // Aller A→B : sens horaire (CW)
-            const goArcPath   = ringArcPath(fromAngle, toAngle,   true);
+            const goArcPath = ringArcPath(fromAngle, toAngle, true);
             // Retour B→A : sens anti-horaire (CCW) — visuellement le paquet
             // rebrousse chemin sur le même arc, donnant l'impression de
             // repartir en sens horaire vers A
-            const backArcPath = ringArcPath(toAngle,   fromAngle, false);
+            const backArcPath = ringArcPath(toAngle, fromAngle, false);
 
-            const goT   = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
+            const goT = p < P1 ? 0 : p < P2 ? easeOut((p - P1) / (P2 - P1)) : 1;
             const backT = p < P3 ? 0 : p < P4 ? easeOut((p - P3) / (P4 - P3)) : 1;
 
             // Aller CW, retour CCW (= rebrousse sur le même arc court)
-            const goPoint   = ringArcPoint(fromAngle, toAngle,   goT,   true);
-            const backPoint = ringArcPoint(toAngle,   fromAngle, backT, false);
+            const goPoint = ringArcPoint(fromAngle, toAngle, goT, true);
+            const backPoint = ringArcPoint(toAngle, fromAngle, backT, false);
 
-            const srcOpacity    = p < P1 ? easeOut(p / P1)
-                                : p < P2 ? 1
-                                : p < P3 ? 1 - easeOut((p - P2) / (P3 - P2))
-                                : 0;
+            const srcOpacity = p < P1 ? easeOut(p / P1)
+              : p < P2 ? 1
+                : p < P3 ? 1 - easeOut((p - P2) / (P3 - P2))
+                  : 0;
 
-            const showGoPacket  = p >= P1 && p < P2;
-            const recvBOpacity  = p < P2  ? 0
-                                : p < P3  ? easeOut((p - P2) / (P3 - P2))
-                                : p < P4  ? Math.max(0, 1 - easeOut((p - P3) / (P4 - P3)))
-                                : 0;
-            const showRippleB   = p >= P2 && p < P3 + 0.05;
+            const showGoPacket = p >= P1 && p < P2;
+            const recvBOpacity = p < P2 ? 0
+              : p < P3 ? easeOut((p - P2) / (P3 - P2))
+                : p < P4 ? Math.max(0, 1 - easeOut((p - P3) / (P4 - P3)))
+                  : 0;
+            const showRippleB = p >= P2 && p < P3 + 0.05;
             const showBackPacket = p >= P3 && p < P4;
-            const recvAOpacity  = p >= P4 ? easeOut((p - P4) / (P5 - P4)) : 0;
-            const showRippleA   = p >= P4;
+            const recvAOpacity = p >= P4 ? easeOut((p - P4) / (P5 - P4)) : 0;
+            const showRippleA = p >= P4;
 
             return (
               <g style={{ pointerEvents: "none" }}>
