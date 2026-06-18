@@ -22,21 +22,49 @@ def _ensure_backend_on_network(network_name: str):
     hostname = socket.gethostname()
     try:
         backend_container = client.containers.get(hostname)
+        backend_container.reload()
         backend_networks = backend_container.attrs.get(
             "NetworkSettings", {}).get("Networks", {})
         if network_name not in backend_networks:
-            network = client.networks.get(network_name)
+            from services.dockerService import get_or_create_network
+            network = get_or_create_network(network_name)
             network.connect(backend_container)
+            backend_container.reload()
             print(f"Backend attached to network {network_name}")
     except Exception as e:
         print(f"Could not attach backend to {network_name}: {e}")
 
 
 def get_session(cluster_name: str):
-    print("Connecting to Cassandra via localhost:9042")
+    from services.dockerService import get_nodes_in_network
+
+    network_name = f"cassandra-net-{cluster_name}"
+    _ensure_backend_on_network(network_name)
+
+    # Discover running Cassandra node IPs on the cluster network
+    nodes = get_nodes_in_network(cluster_name)
+    contact_points = []
+    for container in nodes:
+        try:
+            container.reload()
+            if container.status != "running":
+                continue
+            ip = container.attrs["NetworkSettings"]["Networks"][network_name]["IPAddress"]
+            if ip:
+                contact_points.append(ip)
+        except Exception:
+            continue
+
+    if not contact_points:
+        raise NoHostAvailable(
+            "No running Cassandra nodes found in the cluster network",
+            errors={}
+        )
+
+    print(f"Connecting to Cassandra via {contact_points}:{9042}")
 
     cluster = Cluster(
-        contact_points=["127.0.0.1"],
+        contact_points=contact_points,
         port=9042,
         load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
         protocol_version=5,

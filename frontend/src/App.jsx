@@ -102,7 +102,7 @@ function PedaMessage({ msg, onClose }) {
       gap: 8,
     }}>
       <span style={{ fontSize: 16, lineHeight: 1 }}>💡</span>
-      <span style={{ fontSize: 11, color: "#c8eef3", lineHeight: 1.6, flex: 1 }}>{msg}</span>
+      <span style={{ fontSize: 11, color: "#1e56a0", lineHeight: 1.6, flex: 1, fontWeight: 500 }}>{msg}</span>
       <button onClick={onClose} style={{ background: "none", border: "none", color: "#5A7A96", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
     </div>
   );

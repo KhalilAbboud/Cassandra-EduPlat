@@ -340,13 +340,13 @@ pre {
 }
 
 .csv-data-point {
-  fill: #18B4C8;
-  stroke: #1287A8;
+  fill: #1e56a0;
+  stroke: #0d2847;
   stroke-width: 2;
 }
 
 .csv-data-label {
-  fill: #EDF2F7;
+  fill: #0d2847;
   font-size: 9px;
   font-weight: 700;
 }
@@ -480,7 +480,7 @@ pre {
 
 .success-mini {
   font-size: 10px;
-  color: #f7a86a;
+  color: #1e56a0;
   margin-bottom: 8px;
   line-height: 1.5;
 }

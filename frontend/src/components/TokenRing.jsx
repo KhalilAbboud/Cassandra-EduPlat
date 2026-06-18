@@ -368,12 +368,12 @@ export default function TokenRing({
         {/* CSV anim points */}
         {animPoints.map(p => (
           <g key={p.id} style={{ pointerEvents: "none" }}>
-            {!p.done && <line x1={CX} y1={CY} x2={p.x} y2={p.y} stroke="#facc15" strokeWidth={1} opacity={0.2} strokeDasharray="3 3" />}
-            <circle cx={p.x} cy={p.y} r={p.done ? 5 : 8} fill="#facc15" stroke="#ca8a04" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.75 : 1} />
+            {!p.done && <line x1={CX} y1={CY} x2={p.x} y2={p.y} stroke="#1e56a0" strokeWidth={1} opacity={0.35} strokeDasharray="3 3" />}
+            <circle cx={p.x} cy={p.y} r={p.done ? 5 : 8} fill="#1e56a0" stroke="#0d2847" strokeWidth={p.done ? 1 : 1.5} opacity={p.done ? 0.85 : 1} />
             {!p.done && p.rawKey && (
               <g transform={`translate(${p.x}, ${p.y - 16})`}>
-                <text x={0} y={-7} textAnchor="middle" fontSize={9} fill="#fff" fontWeight="700" opacity={0.9}>{p.rawKey}</text>
-                <text x={0} y={2} textAnchor="middle" fontSize={7.5} fill="#38bdf8" opacity={0.9}>{p.hashKey}</text>
+                <text x={0} y={-7} textAnchor="middle" fontSize={9} fill="#0d2847" fontWeight="700" opacity={0.9}>{p.rawKey}</text>
+                <text x={0} y={2} textAnchor="middle" fontSize={7.5} fill="#1a3a5c" opacity={0.9}>{p.hashKey}</text>
               </g>
             )}
           </g>
@@ -400,28 +400,28 @@ export default function TokenRing({
               <g style={{ pointerEvents: "none" }}>
                 {rawOpacity > 0 && (
                   <g opacity={rawOpacity}>
-                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#162840" stroke="rgba(250,204,21,0.4)" strokeWidth={1} />
-                    <text x={CX} y={CY - 4} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="rgba(255,255,255,0.5)" letterSpacing={1}>RAW KEY</text>
-                    <text x={CX} y={CY + 10} textAnchor="middle" dominantBaseline="middle" fontSize={12} fontWeight="700" fill="#facc15">"{rawKey}"</text>
+                    <rect x={CX - 55} y={CY - 18} width={110} height={26} rx={5} fill="#e8eef4" stroke="rgba(30,86,160,0.5)" strokeWidth={1} />
+                    <text x={CX} y={CY - 4} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#1a3a5c" letterSpacing={1}>RAW KEY</text>
+                    <text x={CX} y={CY + 10} textAnchor="middle" dominantBaseline="middle" fontSize={12} fontWeight="700" fill="#1e56a0">"{rawKey}"</text>
                   </g>
                 )}
                 {hashLabelOpacity > 0 && (
                   <g opacity={hashLabelOpacity}>
-                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#162840" stroke="rgba(56,189,248,0.5)" strokeWidth={1} />
-                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="rgba(200,220,240,0.8)" letterSpacing={2}>HASH(key)</text>
-                    <text x={CX} y={CY + 8} textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight="700" fill="#38bdf8">{hashLabel}</text>
+                    <rect x={CX - 65} y={CY - 22} width={130} height={34} rx={5} fill="#e8eef4" stroke="rgba(30,86,160,0.5)" strokeWidth={1} />
+                    <text x={CX} y={CY - 7} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="#1a3a5c" letterSpacing={2}>HASH(key)</text>
+                    <text x={CX} y={CY + 8} textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight="700" fill="#1e56a0">{hashLabel}</text>
                   </g>
                 )}
-                {showDot && <line x1={CX} y1={CY} x2={dotX} y2={dotY} stroke="#38bdf8" strokeWidth={1.5} opacity={0.3} strokeDasharray="4 3" />}
+                {showDot && <line x1={CX} y1={CY} x2={dotX} y2={dotY} stroke="#1e56a0" strokeWidth={1.5} opacity={0.4} strokeDasharray="4 3" />}
                 {showDot && (
-                  <circle cx={dotX} cy={dotY} r={5} fill="#38bdf8" stroke="#0ea5e9" strokeWidth={1.5}>
+                  <circle cx={dotX} cy={dotY} r={5} fill="#1e56a0" stroke="#0d2847" strokeWidth={1.5}>
                     <animate attributeName="r" values="4;7;4" dur="0.5s" repeatCount="indefinite" />
                   </circle>
                 )}
                 {ringMarkerOpacity > 0 && (
                   <g opacity={ringMarkerOpacity}>
-                    <circle cx={hashPos.x} cy={hashPos.y} r={7} fill="#facc15" stroke="#ca8a04" strokeWidth={2} />
-                    <text x={hashPos.x} y={hashPos.y - 16} textAnchor="middle" fontSize={8} fill="#facc15" fontWeight="700">H({hashLabel.slice(0, 8)})</text>
+                    <circle cx={hashPos.x} cy={hashPos.y} r={7} fill="#1e56a0" stroke="#0d2847" strokeWidth={2} />
+                    <text x={hashPos.x} y={hashPos.y - 16} textAnchor="middle" fontSize={8} fill="#0d2847" fontWeight="700">H({hashLabel.slice(0, 8)})</text>
                   </g>
                 )}
                 {p >= P3 && replicas.map((replica, i) => {
