@@ -11,13 +11,9 @@ const mono = { fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 1
 
 // ─── Hint bubble SVG animation ──────────────────────────────────────────────
 
-function HintFlowSVG({ hints, nodes, replayingHint }) {
+function HintFlowSVG({ downNodeId, coordName, replayingHint, hintCount }) {
   const W = 340, H = 110;
-  if (!hints.length || nodes.length < 2) return null;
-
-  const downNodeId = hints[0]?.target_node;
-  const downNode = nodes.find(n => n.id === downNodeId) ?? nodes[0];
-  const coordNode = nodes.find(n => n.id !== downNode.id) ?? nodes[1];
+  if (!downNodeId || !coordName) return null;
 
   const coordX = 80, coordY = H / 2;
   const downX = 260, downY = H / 2;
@@ -35,45 +31,39 @@ function HintFlowSVG({ hints, nodes, replayingHint }) {
         `}</style>
       </defs>
 
-      {/* Dashed line between nodes */}
       <line x1={coordX + 22} y1={coordY} x2={downX - 22} y2={downY}
         stroke="rgba(26,43,60,0.18)" strokeWidth={1.5} strokeDasharray="5 4" />
 
-      {/* Coordinator node */}
       <circle cx={coordX} cy={coordY} r={20} fill="rgba(32,178,170,0.12)" stroke={ACCENT} strokeWidth={1.5} />
       <text x={coordX} y={coordY - 1} textAnchor="middle" dominantBaseline="middle"
-        fontSize={9} fontWeight={700} fill={ACCENT}>{coordNode?.id ?? "Coord"}</text>
+        fontSize={9} fontWeight={700} fill={ACCENT}>{coordName}</text>
       <text x={coordX} y={coordY + 10} textAnchor="middle" dominantBaseline="middle"
         fontSize={7} fill="#5A7A96">coordinator</text>
 
-      {/* Hint storage badge */}
-      {hints.length > 0 && (
+      {hintCount > 0 && (
         <g>
           <rect x={coordX - 14} y={coordY - 36} width={28} height={16} rx={4}
             fill={AMBER + "33"} stroke={AMBER} strokeWidth={0.8} />
           <text x={coordX} y={coordY - 27} textAnchor="middle" dominantBaseline="middle"
-            fontSize={7.5} fontWeight={700} fill={AMBER}>{hints.length} hint{hints.length > 1 ? "s" : ""}</text>
+            fontSize={7.5} fontWeight={700} fill={AMBER}>{hintCount} hint{hintCount > 1 ? "s" : ""}</text>
         </g>
       )}
 
-      {/* Down node */}
       <circle cx={downX} cy={downY} r={20}
         fill={isReplaying ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)"}
         stroke={isReplaying ? GREEN : RED} strokeWidth={1.5}
         className={!isReplaying ? "hh-pulse" : ""} />
       <text x={downX} y={downY - 1} textAnchor="middle" dominantBaseline="middle"
-        fontSize={9} fontWeight={700} fill={isReplaying ? GREEN : RED}>{downNode?.id ?? "Node"}</text>
+        fontSize={9} fontWeight={700} fill={isReplaying ? GREEN : RED}>{downNodeId}</text>
       <text x={downX} y={downY + 10} textAnchor="middle" dominantBaseline="middle"
         fontSize={7} fill={isReplaying ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.5)"}>
         {isReplaying ? "recovering…" : "offline"}
       </text>
 
-      {/* Flying dot during replay */}
       {isReplaying && progress > 0 && progress < 1 && (
         <circle cx={dotX} cy={coordY} r={5} fill={AMBER} opacity={0.9} />
       )}
 
-      {/* Labels */}
       <text x={W / 2} y={14} textAnchor="middle" fontSize={8}
         fill="#5A7A96" letterSpacing={1}>HINTED HANDOFF</text>
     </svg>
@@ -87,18 +77,19 @@ function HintFlowSVG({ hints, nodes, replayingHint }) {
  *
  * Props:
  *   clusterName  — string
- *   nodes        — array of { id, status, ip }
- *   getHints     — async (clusterName) => { hints: [{target_node, key, mutation_ts, coordinator}], raw_tpstats: string }
- *   startNode    — async (nodeName, clusterName) => void   (triggers recovery)
+ *   nodes        — array of { id, status }
+ *   getHints     — async (clusterName) => { hints, raw_tpstats }
+ *   startNode    — async (nodeName, clusterName) => void
  */
 export default function HintedHandoffPanel({ clusterName, nodes, getHints, startNode }) {
   const [hints, setHints] = useState([]);
   const [rawStats, setRawStats] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [replayingHint, setReplaying] = useState(null);   // { targetNode, progress }
+  const [replayingHint, setReplaying] = useState(null);
   const [log, setLog] = useState([]);
   const [expanded, setExpanded] = useState(false);
+  const [recoveredNodes, setRecoveredNodes] = useState(new Set());
   const intervalRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -118,7 +109,9 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
       const newHints = data?.hints ?? [];
       setHints(newHints);
       setRawStats(data?.raw_tpstats ?? "");
-      if (newHints.length > 0) pushLog(`${newHints.length} hint(s) pending for ${[...new Set(newHints.map(h => h.target_node))].join(", ")}`, AMBER);
+      if (newHints.length > 0) {
+        pushLog(`${newHints.length} hint(s) detected for ${[...new Set(newHints.map(h => h.target_node))].join(", ")}`, AMBER);
+      }
     } catch (e) {
       if (mountedRef.current) setError(e.message);
     } finally {
@@ -128,39 +121,57 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
 
   // Poll every 4s when there are down nodes
   useEffect(() => {
-    const downNodes = nodes.filter(n => n.status !== "up");
-    if (downNodes.length === 0) { clearInterval(intervalRef.current); return; }
+    const downCount = nodes.filter(n => n.status !== "up").length;
+    if (downCount === 0) { clearInterval(intervalRef.current); return; }
     fetchHints();
     intervalRef.current = setInterval(fetchHints, 4000);
     return () => clearInterval(intervalRef.current);
   }, [nodes, fetchHints]);
 
+  // Reset recovered set when node count changes (re-stopped etc.)
+  useEffect(() => { setRecoveredNodes(new Set()); }, [nodes.length]);
+
+  // Ground-truth down nodes — from the nodes prop, not from hints
+  const downNodes = nodes.filter(n => n.status !== "up" && !recoveredNodes.has(n.id));
+  const coordinator = nodes.find(n => n.status === "up");
+
   const handleRecover = useCallback(async (targetNodeId) => {
     if (!startNode) return;
     pushLog(`Starting recovery for ${targetNodeId}…`, ACCENT);
     try {
-      const nodeHints = hints.filter(h => h.target_node === targetNodeId);
-      let i = 0;
       const startTime = performance.now();
       const TOTAL = 3500;
 
       const animate = (now) => {
         const t = Math.min((now - startTime) / TOTAL, 1);
         if (mountedRef.current) setReplaying({ targetNode: targetNodeId, progress: t });
-        if (t < 1) requestAnimationFrame(animate);
-        else {
+        if (t < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          if (!mountedRef.current) return;
           setReplaying(null);
-          pushLog(`✓ ${nodeHints.length} hint(s) replayed to ${targetNodeId}`, GREEN);
+          setRecoveredNodes(prev => new Set([...prev, targetNodeId]));
+          const nodeHints = hints.filter(h => h.target_node === targetNodeId);
+          pushLog(
+            `✓ ${targetNodeId} restarted${nodeHints.length > 0 ? ` — ${nodeHints.length} hint(s) replayed` : " — Cassandra replays hints internally"}`,
+            GREEN
+          );
           setHints(prev => prev.filter(h => h.target_node !== targetNodeId));
         }
       };
       requestAnimationFrame(animate);
 
+      // Actually restart the node
       await startNode(targetNodeId, clusterName);
+
+      // Log any hint keys we know about
+      const nodeHints = hints.filter(h => h.target_node === targetNodeId);
       for (const hint of nodeHints) {
         await new Promise(r => setTimeout(r, 300));
         pushLog(`  → replaying key "${hint.key}" to ${targetNodeId}`, AMBER);
-        i++;
+      }
+      if (nodeHints.length === 0) {
+        pushLog(`  → Cassandra is internally replaying any stored hints to ${targetNodeId}`, AMBER);
       }
     } catch (e) {
       setReplaying(null);
@@ -168,11 +179,9 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
     }
   }, [hints, startNode, clusterName, pushLog]);
 
-  const downNodes = [...new Set(hints.map(h => h.target_node))];
-  const aliveNodes = nodes.filter(n => n.status === "up");
-
   return (
     <div style={card}>
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={h3s}>⚡ HINTED HANDOFF</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -195,10 +204,17 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
         </div>
       )}
 
-      {/* SVG visualisation */}
-      <HintFlowSVG hints={hints} nodes={aliveNodes} replayingHint={replayingHint} />
+      {/* SVG visualisation for first down node */}
+      {downNodes.length > 0 && (
+        <HintFlowSVG
+          downNodeId={downNodes[0].id}
+          coordName={coordinator?.id ?? "Coordinator"}
+          replayingHint={replayingHint?.targetNode === downNodes[0].id ? replayingHint : null}
+          hintCount={hints.filter(h => h.target_node === downNodes[0].id).length}
+        />
+      )}
 
-      {/* Status bar */}
+      {/* Status counters */}
       <div style={{ display: "flex", gap: 8, marginTop: 6, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ flex: 1, padding: "8px 10px", background: "rgba(245,158,11,0.06)", borderRadius: 6, border: `1px solid ${AMBER}22` }}>
           <div style={{ fontSize: 8, color: AMBER, letterSpacing: 1, marginBottom: 3 }}>PENDING HINTS</div>
@@ -210,50 +226,53 @@ export default function HintedHandoffPanel({ clusterName, nodes, getHints, start
         </div>
       </div>
 
-      {/* Per-node hint table */}
-      {hints.length > 0 && (
+      {/* Per-node recovery cards — always shown for every down node */}
+      {downNodes.length > 0 ? (
         <div style={{ marginBottom: 10 }}>
-          {downNodes.map(nodeId => {
-            const nodeHints = hints.filter(h => h.target_node === nodeId);
-            const isReplaying = replayingHint?.targetNode === nodeId;
+          {downNodes.map(node => {
+            const nodeHints = hints.filter(h => h.target_node === node.id);
+            const isReplaying = replayingHint?.targetNode === node.id;
             return (
-              <div key={nodeId} style={{ marginBottom: 8, padding: "8px 10px", background: "rgba(239,68,68,0.06)", borderRadius: 7, border: `1px solid ${RED}22` }}>
+              <div key={node.id} style={{ marginBottom: 8, padding: "8px 10px", background: "rgba(239,68,68,0.06)", borderRadius: 7, border: `1px solid ${RED}22` }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: RED, ...mono }}>{nodeId}</span>
-                  <span style={{ fontSize: 9, color: AMBER }}>{nodeHints.length} hint{nodeHints.length > 1 ? "s" : ""} stored</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: RED, ...mono }}>{node.id}</span>
+                  <span style={{ fontSize: 9, color: AMBER }}>
+                    {nodeHints.length > 0 ? `${nodeHints.length} hint(s) stored` : "offline — hints stored internally by Cassandra"}
+                  </span>
                 </div>
-                <div style={{ maxHeight: 80, overflowY: "auto", marginBottom: 8 }}>
-                  {nodeHints.map((h, i) => (
-                    <div key={i} style={{ fontSize: 9, color: "#5A7A96", display: "flex", gap: 8, marginBottom: 2, ...mono }}>
-                      <span style={{ color: AMBER, minWidth: 60 }}>{h.key ?? `key-${i}`}</span>
-                      <span style={{ color: "#8AA8C0" }}>via {h.coordinator ?? "coordinator"}</span>
-                      <span style={{ marginLeft: "auto", color: "#8AA8C0" }}>{h.mutation_ts ? new Date(h.mutation_ts).toLocaleTimeString() : ""}</span>
-                    </div>
-                  ))}
-                </div>
+
+                {nodeHints.length > 0 && (
+                  <div style={{ maxHeight: 80, overflowY: "auto", marginBottom: 8 }}>
+                    {nodeHints.map((h, i) => (
+                      <div key={i} style={{ fontSize: 9, color: "#5A7A96", display: "flex", gap: 8, marginBottom: 2, ...mono }}>
+                        <span style={{ color: AMBER, minWidth: 60 }}>{h.key ?? `key-${i}`}</span>
+                        <span style={{ color: "#8AA8C0" }}>via {h.coordinator ?? "coordinator"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <button
                   disabled={isReplaying}
-                  onClick={() => handleRecover(nodeId)}
+                  onClick={() => handleRecover(node.id)}
                   style={{
-                    width: "100%", padding: "5px 0", fontSize: 10, fontWeight: 700,
+                    width: "100%", padding: "6px 0", fontSize: 10, fontWeight: 700,
                     background: isReplaying ? "rgba(34,197,94,0.12)" : "rgba(34,197,94,0.15)",
                     border: `1px solid ${GREEN}44`,
                     borderRadius: 5, color: GREEN, cursor: isReplaying ? "not-allowed" : "pointer",
                     transition: "all 0.2s",
                   }}>
-                  {isReplaying ? "⟳ replaying hints…" : `▶ recover ${nodeId} & replay hints`}
+                  {isReplaying ? "⟳ recovering…" : `▶ restart ${node.id} & replay hints`}
                 </button>
               </div>
             );
           })}
         </div>
-      )}
-
-      {hints.length === 0 && !loading && (
+      ) : (
         <div style={{ textAlign: "center", padding: "12px 0", fontSize: 10, color: "#8AA8C0" }}>
           {nodes.filter(n => n.status !== "up").length === 0
             ? "All nodes are up — no hints pending."
-            : "No hints detected yet. Bring a node down and write data to generate hints."}
+            : "Recovering…"}
         </div>
       )}
 

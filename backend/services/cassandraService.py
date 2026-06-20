@@ -35,7 +35,18 @@ def _ensure_backend_on_network(network_name: str):
         print(f"Could not attach backend to {network_name}: {e}")
 
 
+_sessions = {}
+
 def get_session(cluster_name: str):
+    if cluster_name in _sessions:
+        try:
+            # Quick check if session is still valid
+            _sessions[cluster_name].execute("SELECT cluster_name FROM system.local")
+            return _sessions[cluster_name]
+        except Exception:
+            # If dead, reconnect
+            del _sessions[cluster_name]
+
     from services.dockerService import get_nodes_in_network
 
     network_name = f"cassandra-net-{cluster_name}"
@@ -68,11 +79,12 @@ def get_session(cluster_name: str):
         port=9042,
         load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="datacenter1"),
         protocol_version=5,
-        connect_timeout=30,
+        connect_timeout=4,
     )
 
     session = cluster.connect()
-    session.default_timeout = 30
+    session.default_timeout = 4
+    _sessions[cluster_name] = session
     return session
 
 
@@ -162,11 +174,8 @@ def list_tables(cluster_name: str, keyspace_name: str):
 
 
 def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency="QUORUM"):
-    try:
-        session = get_session(cluster_name)
-        consistency = CONSISTENCY_MAP.get(
-            write_consistency, ConsistencyLevel.QUORUM)
-
+    def _do_insert(session):
+        consistency = CONSISTENCY_MAP.get(write_consistency, ConsistencyLevel.QUORUM)
         processed_data = {}
         for k, v in data.items():
             processed_data[k] = uuid.uuid4() if v == "uuid()" else v
@@ -178,10 +187,21 @@ def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency
         cql = f"INSERT INTO {keyspace_name}.{table_name} ({columns}) VALUES ({placeholders})"
         statement = SimpleStatement(cql, consistency_level=consistency)
         session.execute(statement, values)
-
-        print(
-            f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
+        print(f"Inserted into '{keyspace_name}.{table_name}' with consistency {write_consistency}")
         return {"inserted": {k: str(v) for k, v in processed_data.items()}, "consistency": write_consistency}
+
+    try:
+        session = get_session(cluster_name)
+        try:
+            return _do_insert(session)
+        except (Unavailable, NoHostAvailable):
+            raise  # bubble immediately — handled below
+        except Exception:
+            # Stale session (e.g. node recycled) — evict cache and retry once
+            print(f"[insert_data] Stale session for {cluster_name}, evicting and retrying...")
+            _sessions.pop(cluster_name, None)
+            session = get_session(cluster_name)
+            return _do_insert(session)
 
     except Unavailable as e:
         raise HTTPException(status_code=503, detail={
@@ -203,30 +223,41 @@ def insert_data(cluster_name, keyspace_name, table_name, data, write_consistency
                     "tip": "Increase replication_factor or use a lower consistency level"
                 })
         raise HTTPException(status_code=503, detail={
-                            "error": "No hosts available", "details": str(e)})
+            "error": "No hosts available", "details": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "Insert failed", "details": str(e)})
 
 
 def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consistency="QUORUM"):
-    try:
-        session = get_session(cluster_name)
-        consistency = CONSISTENCY_MAP.get(
-            read_consistency, ConsistencyLevel.QUORUM)
-
+    def _do_select(session):
+        consistency = CONSISTENCY_MAP.get(read_consistency, ConsistencyLevel.QUORUM)
         cql = f"SELECT * FROM {keyspace_name}.{table_name}"
         values = []
         if filters:
-            where_clause = " AND ".join(
-                f"{col} = %s" for col in filters.keys())
+            where_clause = " AND ".join(f"{col} = %s" for col in filters.keys())
             cql += f" WHERE {where_clause}"
             values = list(filters.values())
-
+        
+        cql += " LIMIT 100"
+        
         statement = SimpleStatement(cql, consistency_level=consistency)
         rows = session.execute(statement, values)
-
         result = [dict(row._asdict()) for row in rows]
-        print(
-            f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
+        print(f"Read {len(result)} rows from '{keyspace_name}.{table_name}' with consistency {read_consistency}")
         return result
+
+    try:
+        session = get_session(cluster_name)
+        try:
+            return _do_select(session)
+        except (Unavailable, NoHostAvailable):
+            raise
+        except Exception:
+            print(f"[select_data] Stale session for {cluster_name}, evicting and retrying...")
+            _sessions.pop(cluster_name, None)
+            session = get_session(cluster_name)
+            return _do_select(session)
 
     except Unavailable as e:
         raise HTTPException(status_code=503, detail={
@@ -249,4 +280,8 @@ def select_data(cluster_name, keyspace_name, table_name, filters={}, read_consis
                     "tip": "Increase replication_factor or use a lower consistency level"
                 })
         raise HTTPException(status_code=503, detail={
-                            "error": "No hosts available", "details": str(e)})
+            "error": "No hosts available", "details": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={
+            "error": "Read failed", "details": str(e)})
+

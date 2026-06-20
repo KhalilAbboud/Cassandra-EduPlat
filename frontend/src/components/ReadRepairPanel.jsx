@@ -275,7 +275,7 @@ export default function ReadRepairPanel({
       await animatePhase("fetch", 1100);
 
       // Actually do the read in the background
-      const filters = filterKey.trim() ? { [keyspaceName]: filterKey.trim() } : {};
+      const filters = filterKey.trim() ? { id: filterKey.trim() } : {};
       try {
         await readData(filters, consistencyLevel ?? "QUORUM", keyspaceName, tableName, clusterName);
       } catch { /* read errors are expected in degraded clusters */ }

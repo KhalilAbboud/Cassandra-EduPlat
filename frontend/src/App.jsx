@@ -4,12 +4,13 @@ import {
   getCluster, deleteCluster,
   createKeyspace, createTable,
   getEndpoints, explainPartition, getGossip, getBatchHashes,
-  getHints, getRepairStats, startNode
+  getHints, getRepairStats, startNode, stopNode
 } from "./services/api";
 import TokenRing from "./components/TokenRing";
 import CAPErrorModal from "./components/CAPErrorModal";
 import HintedHandoffPanel from "./components/HintedHandoffPanel";
 import ReadRepairPanel from "./components/ReadRepairPanel";
+import CoordinatorModal from "./components/CoordinatorModal";
 import { simulatePlacement } from "./utils/cassandraSimulation";
 import "./App.css";
 
@@ -126,10 +127,9 @@ export default function App() {
   const [replicationFactor, setReplicationFactor] = useState(2);
   const [tableName] = useState("edu_table");
 
-  // Colonnes fixes — pas d'état éditable
-  const columns = FIXED_COLUMNS;
+  const [columns, setColumns] = useState(FIXED_COLUMNS);
   const partitionKeys = ["id"];
-  const primaryPartitionKey = "id";
+  const [primaryPartitionKey, setPrimaryPartitionKey] = useState("id");
 
   const [schemaReady, setSchemaReady] = useState(false);
   const [schemaMode, setSchemaMode] = useState("manual");
@@ -145,8 +145,8 @@ export default function App() {
   // Coordinator node sélectionné par l'utilisateur
   const [coordinatorNode, setCoordinatorNode] = useState("");
 
-  // Message pédagogique
-  const [pedaMsg, setPedaMsg] = useState("");
+  // Modal explaining coordinator vs replica routing
+  const [coordinatorModalData, setCoordinatorModalData] = useState(null);
 
   const [csvFile, setCsvFile] = useState(null);
   const [csvColumns, setCsvColumns] = useState([]);
@@ -300,6 +300,21 @@ export default function App() {
     }
   }, [clusterName, fetchCluster, fetchClusterRaw]);
 
+  const handleStopNode = useCallback(async (nodeId, clusterNameArg) => {
+    try {
+      setLoadingMsg(`⟳ Stopping ${nodeId}...`);
+      await stopNode(nodeId, clusterNameArg ?? clusterName);
+      setNodes(prev => prev.map(n =>
+        n.id === nodeId ? { ...n, status: "down" } : n
+      ));
+      await fetchCluster();
+    } catch (e) {
+      console.error("stopNode failed", e);
+    } finally {
+      setLoadingMsg(null);
+    }
+  }, [clusterName, fetchCluster]);
+
   useEffect(() => {
     if (gossipIntervalRef.current) clearInterval(gossipIntervalRef.current);
     const aliveNodes = nodes.filter(n => n.status === "up" && n.tokens?.length > 0);
@@ -355,6 +370,8 @@ export default function App() {
       setLoadingMsg(`⟳ Creating table '${tableName}'...`);
       await createTable(colsObj, ["id"], tableName, keyspaceName, clusterName);
       setSchemaReady(true);
+      setColumns(FIXED_COLUMNS);
+      setPrimaryPartitionKey("id");
       setRowValues({});
       setOutput({ success: `Keyspace '${keyspaceName}' and table '${tableName}' created.`, columns: "id (text) [PK], value (text)" });
     } catch (e) {
@@ -366,8 +383,8 @@ export default function App() {
 
   const handleWrite = async () => {
     if (!schemaReady) { setOutput({ error: "Run Setup first" }); return; }
-    const pkVal = rowValues["id"];
-    if (!pkVal?.trim()) { setOutput({ error: "Partition key 'id' cannot be empty" }); return; }
+    const pkVal = rowValues[primaryPartitionKey];
+    if (!pkVal?.trim()) { setOutput({ error: `Partition key '${primaryPartitionKey}' cannot be empty` }); return; }
     try {
       setLoadingMsg(`⟳ Envoi à ${coordinatorNode || "un nœud"} — écriture de '${pkVal}'...`);
       const r = await writeData(rowValues, consistencyLevel, keyspaceName, tableName, clusterName);
@@ -386,6 +403,13 @@ export default function App() {
         backendPlacement = simulatePlacement({ key: String(pkVal), nodes, replicationFactor, hashingType });
       }
 
+      const replicasList = backendPlacement?.replicas?.map(n => n.id) || [];
+      setOutput({
+        ...r,
+        coordinator: coordinatorNode || "any",
+        stored_on: replicasList
+      });
+
       addToNodeDataMap(rowValues, nodes, replicationFactor, backendPlacement);
       if (backendPlacement) {
         setCsvDistribution(prev => [...prev, { rowId: `manual_${Date.now()}`, partitionValue: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, row: rowValues }]);
@@ -393,7 +417,7 @@ export default function App() {
       fetchCluster();
 
       if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
-        const TOTAL_DURATION = 7000;
+        const TOTAL_DURATION = 4000;
         const startTime = performance.now();
         setWriteFlowAnim({ key: String(pkVal), hash: backendPlacement.hash, replicas: backendPlacement.replicas, progress: 0 });
         const animateFlow = (now) => {
@@ -407,11 +431,38 @@ export default function App() {
 
       // Message pédagogique
       if (coordinatorNode) {
-        setPedaMsg(
-          `Tu t'es connecté à ${coordinatorNode}. Ce nœud a reçu ta requête, calculé le hash de "${pkVal}" et routé l'écriture vers le(s) bon(s) replica(s) — sans être un maître. Essaie avec un autre nœud d'entrée : les données arrivent exactement au même endroit !`
-        );
+        setCoordinatorModalData({
+          action: "write",
+          coordinator: coordinatorNode,
+          key: String(pkVal),
+          replicas: replicasList
+        });
       }
     } catch (e) {
+      const msg = e.message ?? "";
+      const isUnavailable = msg.toLowerCase().includes("unavailable")
+        || msg.toLowerCase().includes("nohost")
+        || msg.toLowerCase().includes("no host")
+        || msg.toLowerCase().includes("consistency")
+        || msg.toLowerCase().includes("500")
+        || msg.toLowerCase().includes("503")
+        || msg.toLowerCase().includes("failed")
+        || e.status === 503 || e.status === 500;
+      if (isUnavailable) {
+        const deadNodes = nodes.filter(n => n.status === "down" || n.status !== "up");
+        let affectedEntry = null;
+        if (pkVal) {
+          affectedEntry = csvDistribution.find(d => String(d.partitionValue) === String(pkVal));
+          if (!affectedEntry) {
+            const placement = simulatePlacement({ key: String(pkVal), nodes: [...nodes], replicationFactor, hashingType });
+            if (placement) affectedEntry = { partitionValue: pkVal, hash: placement.hash, replicas: placement.replicas, primaryNode: placement.primaryNode?.id };
+          }
+        }
+        setCapError({
+          message: msg, queriedKey: pkVal ?? "(all)",
+          replicationFactor, consistencyLevel, nodes, affectedEntry, deadNodes, nodeDataMap,
+        });
+      }
       setOutput({ error: e.message });
     } finally {
       setLoadingMsg(null);
@@ -423,19 +474,46 @@ export default function App() {
       const filterVal = filters[primaryPartitionKey];
       setLoadingMsg(filterVal ? `⟳ Envoi à ${coordinatorNode || "un nœud"} — lecture de '${filterVal}'...` : "⟳ Lecture en cours...");
       const r = await readData(filters, consistencyLevel, keyspaceName, tableName, clusterName);
-      setOutput(r);
+      
+      let storedOn = [];
+      if (filterVal) {
+        try {
+          const hashesObj = await getBatchHashes([String(filterVal)]);
+          let backendPlacement = null;
+          if (hashesObj[String(filterVal)] != null) {
+            backendPlacement = simulatePlacement({ key: String(filterVal), nodes, replicationFactor, precomputedHash: hashesObj[String(filterVal)] });
+          } else {
+            backendPlacement = simulatePlacement({ key: String(filterVal), nodes, replicationFactor, hashingType });
+          }
+          if (backendPlacement && backendPlacement.replicas) {
+            storedOn = backendPlacement.replicas.map(n => n.id);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      setOutput({
+        data: r,
+        coordinator: coordinatorNode || "any",
+        stored_on: storedOn
+      });
 
       // Message pédagogique
       if (coordinatorNode && filterVal) {
-        setPedaMsg(
-          `Tu t'es connecté à ${coordinatorNode} pour lire "${filterVal}". Ce nœud a contacté les réplicas responsables de cette clé et retourné la réponse — sans être un point central. Change de nœud d'entrée et relance : le résultat est identique !`
-        );
+        setCoordinatorModalData({
+          action: "read",
+          coordinator: coordinatorNode,
+          key: String(filterVal),
+          replicas: storedOn
+        });
       }
     } catch (e) {
       const msg = e.message ?? "";
       const isUnavailable = msg.toLowerCase().includes("unavailable")
         || msg.toLowerCase().includes("nohost")
         || msg.toLowerCase().includes("no host")
+        || msg.toLowerCase().includes("consistency")
         || msg.toLowerCase().includes("500")
         || msg.toLowerCase().includes("503")
         || msg.toLowerCase().includes("failed")
@@ -517,36 +595,56 @@ export default function App() {
     let hashesObj = {};
     try { hashesObj = await getBatchHashes(uniqueKeys); } catch (e) { console.error("Batch hash failed", e); }
 
-    const animDuration = dataLines.length > 50 ? 80 : (dataLines.length > 15 ? 150 : 400);
+    const BATCH_SIZE = 50;
 
-    for (let i = 0; i < dataLines.length; i++) {
-      const line = dataLines[i];
-      if (!line.trim()) continue;
-      const parts = line.split(delim).map(c => c.trim());
-      const row = {};
-      headers.forEach((h, idx) => { row[h] = parts[idx] ?? ""; });
-      const pval = row[pkCol];
-      if (!pval) { skipped++; continue; }
-      try {
-        setLoadingMsg(`⟳ Importing row ${i + 1}/${dataLines.length} — '${pval}'`);
-        await writeData(row, consistencyLevel, ksName, tblName, clusterName);
-        imported++;
+    for (let i = 0; i < dataLines.length; i += BATCH_SIZE) {
+      const batchLines = dataLines.slice(i, i + BATCH_SIZE);
+      setLoadingMsg(`⟳ Importing rows ${i + 1} to ${Math.min(i + BATCH_SIZE, dataLines.length)} / ${dataLines.length}`);
 
-        let backendPlacement = null;
-        if (hashesObj[String(pval)] != null) {
-          backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, precomputedHash: hashesObj[String(pval)] });
-        } else {
-          backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
+      const batchPromises = batchLines.map(async (line, idx) => {
+        const rowIdx = i + idx;
+        if (!line.trim()) return null;
+        const parts = line.split(delim).map(c => c.trim());
+        const row = {};
+        headers.forEach((h, hIdx) => { row[h] = parts[hIdx] ?? ""; });
+        const pval = row[pkCol];
+        if (!pval) return { skipped: true };
+
+        try {
+          await writeData(row, consistencyLevel, ksName, tblName, clusterName);
+
+          let backendPlacement = null;
+          if (hashesObj[String(pval)] != null) {
+            backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, precomputedHash: hashesObj[String(pval)] });
+          } else {
+            backendPlacement = simulatePlacement({ key: String(pval), nodes, replicationFactor, hashingType });
+          }
+
+          return { rowIdx, pval, row, backendPlacement, success: true };
+        } catch (err) {
+          return { rowIdx, pval, error: err.message };
         }
+      });
 
-        if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
-          await new Promise(res => setTimeout(res, animDuration));
-          setCsvDistribution(prev => [...prev, { rowId: `row${i + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row }]);
-          addToNodeDataMap(row, nodes, replicationFactor, backendPlacement);
+      const results = await Promise.all(batchPromises);
+
+      const animDuration = dataLines.length > 50 ? 30 : (dataLines.length > 15 ? 100 : 250);
+
+      for (const res of results) {
+        if (!res) continue;
+        if (res.skipped) { skipped++; continue; }
+        if (res.error) {
+          skipped++;
+          errors.push(`row ${res.rowIdx + 1} (${res.pval}): ${res.error}`);
+        } else if (res.success) {
+          imported++;
+          const { rowIdx, pval, row, backendPlacement } = res;
+          if (backendPlacement?.hash != null && backendPlacement.replicas?.length > 0) {
+            await new Promise(r => setTimeout(r, animDuration));
+            setCsvDistribution(prev => [...prev, { rowId: `row${rowIdx + 1}`, partitionValue: pval, hash: backendPlacement.hash, replicas: backendPlacement.replicas, row }]);
+            addToNodeDataMap(row, nodes, replicationFactor, backendPlacement);
+          }
         }
-      } catch (err) {
-        skipped++;
-        errors.push(`row ${i + 1} (${pval}): ${err.message}`);
       }
     }
     return { imported, skipped, errors };
@@ -590,6 +688,8 @@ export default function App() {
       setLoadingMsg(`⟳ Creating table '${tableName}'...`);
       await createTable(colsObj, [partitionKey], tableName, keyspaceName, clusterName);
       setSchemaReady(true);
+      setColumns(headers.map(h => ({ name: h, type: "text", isPartitionKey: h === partitionKey })));
+      setPrimaryPartitionKey(partitionKey);
       setRowValues({});
 
       const { imported, skipped, errors } = await runCsvInsertLoop({ headers, dataLines, delim, pkCol: partitionKey, ksName: keyspaceName, tblName: tableName });
@@ -795,8 +895,13 @@ export default function App() {
                     </div>
 
                     <div className="schema-preview">
-                      <strong>Fixed table:</strong><br />
-                      <span>id</span> text [PK] · <span>value</span> text
+                      <strong>Current table schema:</strong><br />
+                      {columns.map((c, i) => (
+                        <span key={c.name}>
+                          <span>{c.name}</span> {c.type} {c.isPartitionKey ? "[PK]" : ""}
+                          {i < columns.length - 1 ? " · " : ""}
+                        </span>
+                      ))}
                     </div>
 
                     <button
@@ -865,9 +970,6 @@ export default function App() {
 
                 {dataTab === "manual" && (
                   <>
-                    {/* Message pédagogique */}
-                    <PedaMessage msg={pedaMsg} onClose={() => setPedaMsg("")} />
-
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 2 }}>WRITE</div>
 
                     {/* Nœud d'entrée */}
@@ -875,18 +977,18 @@ export default function App() {
 
                     {schemaReady ? (
                       <>
-                        <label style={{ ...lbl, color: ACCENT }}>id <span style={{ fontSize: 9, opacity: 0.6 }}>(text) [PK]</span></label>
-                        <input
-                          style={inp} placeholder="id..."
-                          value={rowValues["id"] ?? ""}
-                          onChange={e => setRowValues(prev => ({ ...prev, id: e.target.value }))}
-                        />
-                        <label style={lbl}>value <span style={{ fontSize: 9, opacity: 0.6 }}>(text)</span></label>
-                        <input
-                          style={inp} placeholder="value..."
-                          value={rowValues["value"] ?? ""}
-                          onChange={e => setRowValues(prev => ({ ...prev, value: e.target.value }))}
-                        />
+                        {columns.map(col => (
+                          <div key={col.name}>
+                            <label style={{ ...lbl, color: col.isPartitionKey ? ACCENT : "#5A7A96" }}>
+                              {col.name} <span style={{ fontSize: 9, opacity: 0.6 }}>({col.type}) {col.isPartitionKey ? "[PK]" : ""}</span>
+                            </label>
+                            <input
+                              style={inp} placeholder={`${col.name}...`}
+                              value={rowValues[col.name] ?? ""}
+                              onChange={e => setRowValues(prev => ({ ...prev, [col.name]: e.target.value }))}
+                            />
+                          </div>
+                        ))}
                       </>
                     ) : (
                       <div style={{ fontSize: 10, color: "#8AA8C0", marginBottom: 8, fontStyle: "italic" }}>No schema yet.</div>
@@ -902,19 +1004,16 @@ export default function App() {
 
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 8 }}>READ</div>
 
-                    {/* Nœud d'entrée pour le read aussi */}
-                    <NodeEntrySelect />
-
-                    <label style={lbl}>Filter by partition key (id)</label>
+                    <label style={lbl}>Filter by partition key ({primaryPartitionKey})</label>
                     <input
-                      style={inp} placeholder="id value"
+                      style={inp} placeholder={`${primaryPartitionKey} value`}
                       value={filterKey} onChange={e => setFilterKey(e.target.value)}
                     />
                     <button
                       style={{ ...btn, opacity: loadingMsg ? 0.4 : 1 }}
                       disabled={!!loadingMsg}
                       onClick={() => {
-                        const filters = filterKey.trim() ? { id: filterKey.trim() } : {};
+                        const filters = filterKey.trim() ? { [primaryPartitionKey]: filterKey.trim() } : {};
                         handleRead(filters);
                       }}
                     >
@@ -1047,6 +1146,7 @@ export default function App() {
             <TokenRing
               nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
               nodeDataMap={nodeDataMap} onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
+              onStopNode={handleStopNode}
               csvDistribution={csvDistribution} disabled={anyJoining}
               writeFlowAnim={writeFlowAnim} gossipAnim={gossipAnim}
               hashingType={hashingType}
@@ -1127,6 +1227,10 @@ export default function App() {
 
       {capError && (
         <CAPErrorModal error={capError} onClose={() => setCapError(null)} />
+      )}
+
+      {coordinatorModalData && (
+        <CoordinatorModal data={coordinatorModalData} onClose={() => setCoordinatorModalData(null)} />
       )}
     </div>
   );

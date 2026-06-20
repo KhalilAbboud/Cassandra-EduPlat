@@ -257,7 +257,7 @@ export default function TokenRing({
   const onMenuLeave = useCallback(() => {
     isHoveringMenuRef.current = false;
     if (hoverDelayRef.current) clearTimeout(hoverDelayRef.current);
-    hoverTimeoutRef.current = setTimeout(() => { setHoveredId(null); setTooltipVisible(false); }, 200);
+    hoverTimeoutRef.current = setTimeout(() => { setHoveredId(null); setTooltipVisible(false); }, 1000);
   }, []);
 
   const sortedNodes = useMemo(() =>
