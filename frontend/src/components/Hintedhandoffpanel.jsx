@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const ACCENT = "#20B2AA";
+const ACCENT = "#18B4C8";
 const AMBER = "#f59e0b";
 const GREEN = "#22c55e";
 const RED = "#ef4444";
 
-const card = { background: "#FFFFFF", border: "1px solid #D6E0EA", borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
+const card = { background: "#FFFFFF", border: "1px solid #2E4560", borderRadius: 10, padding: "12px 14px", marginBottom: 10 };
 const h3s = { fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: ACCENT, fontWeight: 700, margin: "0 0 10px" };
 const mono = { fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 11 };
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const ACCENT = "#20B2AA";
+const ACCENT = "#18B4C8";
 const AMBER = "#f59e0b";
 const GREEN = "#22c55e";
 const RED = "#ef4444";
@@ -9,7 +9,7 @@ const PURPLE = "#a78bfa";
 
 const card = {
   background: "#FFFFFF",
-  border: "1px solid #D6E0EA",
+  border: "1px solid #2E4560",
   borderRadius: 10,
   padding: "12px 14px",
   marginBottom: 10
@@ -101,7 +101,7 @@ function ReadRepairSVG({ nodes, phase, staleNodeId, progress }) {
             <text x={r.x} y={r.y - 2} textAnchor="middle" dominantBaseline="middle"
               fontSize={8} fontWeight={700} fill={color}>{r.label}</text>
             <text x={r.x} y={r.y + 9} textAnchor="middle" dominantBaseline="middle"
-              fontSize={6.5} fill={r.stale ? RED + "99" : "rgba(255,255,255,0.25)"}>
+              fontSize={6.5} fill={r.stale ? RED + "99" : "#8AA8C0"}>
               {r.stale ? (phase === "done" ? "repaired ✓" : "stale data") : "up to date"}
             </text>
 
@@ -142,7 +142,7 @@ function ReadRepairSVG({ nodes, phase, staleNodeId, progress }) {
       })()}
 
       <text x={W / 2} y={14} textAnchor="middle" fontSize={8}
-        fill="rgba(255,255,255,0.2)" letterSpacing={1}>READ REPAIR</text>
+        fill="#8AA8C0" letterSpacing={1}>READ REPAIR</text>
     </svg>
   );
 }
@@ -342,7 +342,7 @@ export default function ReadRepairPanel({
             padding: "6px 10px",
             fontSize: 10,
             background: "#FFFFFF",
-            border: "1px solid #D6E0EA",
+            border: "1px solid #2E4560",
             borderRadius: 6,
             color: "#1A2B3C",
             fontFamily: "inherit",
@@ -371,7 +371,7 @@ export default function ReadRepairPanel({
       {/* Recent repairs list */}
       {stats.repairs.length > 0 && (
         <div style={{ marginTop: 12, borderTop: "1px solid rgba(26,43,60,0.08)", paddingTop: 8 }}>
-          <div style={{ fontSize: 9, letterSpacing: 1, color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>RECENT REPAIRS</div>
+          <div style={{ fontSize: 9, letterSpacing: 1, color: "#8AA8C0", marginBottom: 6 }}>RECENT REPAIRS</div>
           {stats.repairs.slice(0, 5).map((r, i) => (
             <div key={i} style={{ display: "flex", gap: 8, fontSize: 9, color: "#5A7A96", marginBottom: 3, ...mono }}>
               <span style={{ color: GREEN }}>✓</span>
@@ -390,7 +390,7 @@ export default function ReadRepairPanel({
         <div style={{ marginTop: 10, maxHeight: 120, overflowY: "auto", borderTop: "1px solid rgba(26,43,60,0.08)", paddingTop: 8 }}>
           {repairLog.map((entry, i) => (
             <div key={i} style={{ fontSize: 9, color: entry.color, display: "flex", gap: 8, marginBottom: 2, ...mono }}>
-              <span style={{ color: "rgba(255,255,255,0.2)", flexShrink: 0 }}>{entry.ts}</span>
+              <span style={{ color: "#8AA8C0", flexShrink: 0 }}>{entry.ts}</span>
               <span>{entry.msg}</span>
             </div>
           ))}

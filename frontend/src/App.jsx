@@ -11,6 +11,7 @@ import CAPErrorModal from "./components/CAPErrorModal";
 import HintedHandoffPanel from "./components/HintedHandoffPanel";
 import ReadRepairPanel from "./components/ReadRepairPanel";
 import CoordinatorModal from "./components/CoordinatorModal";
+import DocPanel from "./components/DocPanel";
 import { simulatePlacement } from "./utils/cassandraSimulation";
 import "./App.css";
 
@@ -167,6 +168,7 @@ export default function App() {
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [docOpen, setDocOpen] = useState(false);
   const SIDEBAR_W = 280;
 
   // Noeuds actifs pour le select coordinator
@@ -429,7 +431,6 @@ export default function App() {
         requestAnimationFrame(animateFlow);
       }
 
-      // Message pédagogique
       if (coordinatorNode) {
         setCoordinatorModalData({
           action: "write",
@@ -474,7 +475,7 @@ export default function App() {
       const filterVal = filters[primaryPartitionKey];
       setLoadingMsg(filterVal ? `⟳ Envoi à ${coordinatorNode || "un nœud"} — lecture de '${filterVal}'...` : "⟳ Lecture en cours...");
       const r = await readData(filters, consistencyLevel, keyspaceName, tableName, clusterName);
-      
+
       let storedOn = [];
       if (filterVal) {
         try {
@@ -499,7 +500,6 @@ export default function App() {
         stored_on: storedOn
       });
 
-      // Message pédagogique
       if (coordinatorNode && filterVal) {
         setCoordinatorModalData({
           action: "read",
@@ -745,6 +745,8 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: "#F0F4F8", color: "#1A2B3C", fontFamily: "'Inter', system-ui, sans-serif" }}>
+
+      {/* ─── Header ───────────────────────────────────────────────── */}
       <header style={{ height: 42, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "0 20px", borderBottom: BORDER, background: "#FFFFFF" }}>
         <span style={{ fontSize: 16, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>CassandraEdu</span>
         <span style={{ fontSize: 11, color: "#8AA8C0", letterSpacing: 2 }}>SIMULATOR</span>
@@ -762,9 +764,27 @@ export default function App() {
 
         {schemaReady && <span style={{ fontSize: 10, color: "#6af7b8", marginLeft: 8 }}>✓ {keyspaceName}.{tableName}</span>}
 
-        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, color: "#8AA8C0" }}>{nodes.length} node{nodes.length !== 1 ? "s" : ""} on ring</span>
-          {/* Bouton reset dans le header */}
+
+          {/* ── Docs button ── */}
+          <button
+            onClick={() => setDocOpen(o => !o)}
+            title="Open documentation & guided scenarios"
+            style={{
+              fontSize: 10, padding: "3px 10px", cursor: "pointer",
+              background: docOpen ? "rgba(24,180,200,0.22)" : "rgba(24,180,200,0.10)",
+              border: `1px solid ${docOpen ? ACCENT : "rgba(24,180,200,0.4)"}`,
+              color: ACCENT, borderRadius: 5, fontFamily: "inherit", fontWeight: 600,
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(24,180,200,0.25)"}
+            onMouseLeave={e => e.currentTarget.style.background = docOpen ? "rgba(24,180,200,0.22)" : "rgba(24,180,200,0.10)"}
+          >
+            ? Docs
+          </button>
+
+          {/* ── Reset button ── */}
           <button
             onClick={doReset}
             title="Reset cluster — removes all nodes and data"
@@ -782,6 +802,7 @@ export default function App() {
         </span>
       </header>
 
+      {/* ─── Body ─────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
 
         {/* ─── Left sidebar ─────────────────────────────────────────── */}
@@ -790,7 +811,7 @@ export default function App() {
             <CollapseBtn open={leftOpen} onClick={() => setLeftOpen(o => !o)} side="left" />
             <div style={sidebarInnerStyle}>
 
-              {/* ── Section Cluster (conservée) ── */}
+              {/* ── Section Cluster ── */}
               <Section title="Cluster">
                 <label style={lbl}>Cluster Name</label>
                 <input
@@ -810,34 +831,25 @@ export default function App() {
                 <select style={inp} value={hashingType} onChange={e => setHashingType(e.target.value)}>
                   <option value="murmur3">Murmur3 (default)</option>
                   <option value="md5">MD5</option>
-                  <option value="fnv1a">FNV-1a</option>
-                  <option value="xxhash">xxHash</option>
                 </select>
                 <div style={{ fontSize: 9, color: "#8AA8C0", lineHeight: 1.5, fontStyle: "italic" }}>
                   Drag the ring to add nodes.
                 </div>
               </Section>
 
-              {/* ── Section Setup (colonnes fixes, pas de Strategy editable) ── */}
+              {/* ── Section Schema Mode ── */}
               <Section title="Schema Mode">
                 <div className="mode-switcher">
                   <button
                     className={`mode-choice ${schemaMode === "manual" ? "active" : ""}`}
-                    onClick={() => {
-                      setSchemaMode("manual");
-                      setDataTab("manual");
-                    }}
+                    onClick={() => { setSchemaMode("manual"); setDataTab("manual"); }}
                   >
                     <strong>Manual</strong>
                     <span>Create schema step by step</span>
                   </button>
-
                   <button
                     className={`mode-choice ${schemaMode === "csv" ? "active" : ""}`}
-                    onClick={() => {
-                      setSchemaMode("csv");
-                      setDataTab("csv");
-                    }}
+                    onClick={() => { setSchemaMode("csv"); setDataTab("csv"); }}
                   >
                     <strong>CSV Auto</strong>
                     <span>Import CSV and create schema</span>
@@ -849,51 +861,30 @@ export default function App() {
                     <div className="ux-help-box">
                       Manual mode: choose keyspace, strategy and RF before writing data.
                     </div>
-
                     <label style={lbl}>Keyspace Name</label>
                     <input
                       style={inp}
                       value={keyspaceName}
-                      onChange={e => {
-                        setKeyspaceName(e.target.value);
-                        setSchemaReady(false);
-                      }}
+                      onChange={e => { setKeyspaceName(e.target.value); setSchemaReady(false); }}
                       placeholder="edu_keyspace"
                     />
-
                     <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                       <div style={{ flex: 1 }}>
                         <label style={lbl}>Strategy</label>
-                        <select
-                          style={{ ...inp, marginBottom: 0 }}
-                          value={strategy}
-                          onChange={e => {
-                            setStrategy(e.target.value);
-                            setSchemaReady(false);
-                          }}
-                        >
+                        <select style={{ ...inp, marginBottom: 0 }} value={strategy} onChange={e => { setStrategy(e.target.value); setSchemaReady(false); }}>
                           <option value="SimpleStrategy">Simple</option>
                           <option value="NetworkTopologyStrategy">Network</option>
                         </select>
                       </div>
-
                       <div style={{ flex: 1 }}>
                         <label style={lbl}>Replication Factor</label>
-                        <select
-                          style={{ ...inp, marginBottom: 0 }}
-                          value={replicationFactor}
-                          onChange={e => {
-                            setReplicationFactor(Number(e.target.value));
-                            setSchemaReady(false);
-                          }}
-                        >
+                        <select style={{ ...inp, marginBottom: 0 }} value={replicationFactor} onChange={e => { setReplicationFactor(Number(e.target.value)); setSchemaReady(false); }}>
                           <option value={1}>RF = 1</option>
                           <option value={2}>RF = 2</option>
                           <option value={3}>RF = 3</option>
                         </select>
                       </div>
                     </div>
-
                     <div className="schema-preview">
                       <strong>Current table schema:</strong><br />
                       {columns.map((c, i) => (
@@ -903,19 +894,11 @@ export default function App() {
                         </span>
                       ))}
                     </div>
-
-                    <button
-                      style={{ ...btn }}
-                      onClick={handleSetup}
-                      disabled={!!loadingMsg}
-                    >
+                    <button style={{ ...btn }} onClick={handleSetup} disabled={!!loadingMsg}>
                       {loadingMsg ? loadingMsg : "Create Manual Schema"}
                     </button>
-
                     {schemaReady && (
-                      <div className="success-mini">
-                        ✓ Schema ready: {keyspaceName}.{tableName}
-                      </div>
+                      <div className="success-mini">✓ Schema ready: {keyspaceName}.{tableName}</div>
                     )}
                   </>
                 )}
@@ -930,15 +913,10 @@ export default function App() {
               {/* ── Section Data Entry ── */}
               <Section title="Data Entry">
                 {!schemaReady && schemaMode === "manual" && (
-                  <div className="warning-mini">
-                    Create the manual schema first.
-                  </div>
+                  <div className="warning-mini">Create the manual schema first.</div>
                 )}
-
                 {!schemaReady && schemaMode === "csv" && (
-                  <div className="success-mini">
-                    CSV will create the schema automatically.
-                  </div>
+                  <div className="success-mini">CSV will create the schema automatically.</div>
                 )}
 
                 <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
@@ -953,28 +931,16 @@ export default function App() {
                 </div>
 
                 {schemaMode === "manual" && (
-                  <Tabs
-                    tabs={[{ id: "manual", label: "Manual Data" }]}
-                    active={dataTab}
-                    onChange={setDataTab}
-                  />
+                  <Tabs tabs={[{ id: "manual", label: "Manual Data" }]} active={dataTab} onChange={setDataTab} />
                 )}
-
                 {schemaMode === "csv" && (
-                  <Tabs
-                    tabs={[{ id: "csv", label: "CSV Auto Import" }]}
-                    active={dataTab}
-                    onChange={setDataTab}
-                  />
+                  <Tabs tabs={[{ id: "csv", label: "CSV Auto Import" }]} active={dataTab} onChange={setDataTab} />
                 )}
 
                 {dataTab === "manual" && (
                   <>
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 2 }}>WRITE</div>
-
-                    {/* Nœud d'entrée */}
                     <NodeEntrySelect />
-
                     {schemaReady ? (
                       <>
                         {columns.map(col => (
@@ -993,17 +959,11 @@ export default function App() {
                     ) : (
                       <div style={{ fontSize: 10, color: "#8AA8C0", marginBottom: 8, fontStyle: "italic" }}>No schema yet.</div>
                     )}
-
-                    <button
-                      style={{ ...btn, opacity: schemaReady && !loadingMsg ? 1 : 0.4 }}
-                      onClick={handleWrite}
-                      disabled={!!loadingMsg}
-                    >
+                    <button style={{ ...btn, opacity: schemaReady && !loadingMsg ? 1 : 0.4 }} onClick={handleWrite} disabled={!!loadingMsg}>
                       {loadingMsg && loadingMsg.includes("Writing") ? loadingMsg : "Write to Cassandra"}
                     </button>
 
                     <div style={{ fontSize: 9, color: ACCENT, letterSpacing: 1, marginBottom: 4, marginTop: 8 }}>READ</div>
-
                     <label style={lbl}>Filter by partition key ({primaryPartitionKey})</label>
                     <input
                       style={inp} placeholder={`${primaryPartitionKey} value`}
@@ -1060,9 +1020,9 @@ export default function App() {
                     )}
                     <style>{`
                       @keyframes pulseOrange {
-                        0% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
-                        50% { background: rgba(247,198,106,0.4); border-color: rgba(247,198,106,1); box-shadow: 0 0 15px rgba(247,198,106,0.6); }
-                        100% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4); box-shadow: 0 0 5px rgba(247,198,106,0.2); }
+                        0%   { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4);  box-shadow: 0 0 5px  rgba(247,198,106,0.2); }
+                        50%  { background: rgba(247,198,106,0.4);  border-color: rgba(247,198,106,1);    box-shadow: 0 0 15px rgba(247,198,106,0.6); }
+                        100% { background: rgba(247,198,106,0.15); border-color: rgba(247,198,106,0.4);  box-shadow: 0 0 5px  rgba(247,198,106,0.2); }
                       }
                     `}</style>
                     <button
@@ -1112,7 +1072,7 @@ export default function App() {
 
         {/* ─── Main canvas ──────────────────────────────────────────── */}
         <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "1px 4px", gap: 16, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "#8AA8C0", display: "flex", gap: 24, marginBottom: -10, }}>
+          <div style={{ fontSize: 11, color: "#8AA8C0", display: "flex", gap: 24, marginBottom: -10 }}>
             <span><strong style={{ color: ACCENT }}>Drag +</strong> → add node</span>
             <span><strong style={{ color: ACCENT }}>Hover</strong> → inspect data</span>
             <span><strong style={{ color: ACCENT }}>× button</strong> → remove node</span>
@@ -1142,7 +1102,6 @@ export default function App() {
           )}
 
           <div style={{ width: "100%", maxWidth: 650, marginTop: -10 }}>
-
             <TokenRing
               nodes={nodes} leavingNodes={leavingNodes} cluster={clusterData}
               nodeDataMap={nodeDataMap} onAddNode={handleAddNode} onRemoveNode={handleRemoveNode}
@@ -1151,7 +1110,6 @@ export default function App() {
               writeFlowAnim={writeFlowAnim} gossipAnim={gossipAnim}
               hashingType={hashingType}
             />
-
           </div>
 
           {/* ─── Bottom panels ─────────────────────────────────────── */}
@@ -1159,31 +1117,21 @@ export default function App() {
             <div style={{ display: "flex", gap: 2, marginBottom: 10, borderBottom: "1px solid rgba(32,178,170,0.15)" }}>
               {[
                 { id: "output", label: "Output" },
-                { id: "hints", label: downNodeCount > 0 ? `⚡ Hints (${downNodeCount} down)` : "⚡ Hints" },
-                { id: "repair", label: "🔍 Read Repair" },
+                { id: "hints", label: downNodeCount > 0 ? `Hints (${downNodeCount} down)` : "Hints" },
+                { id: "repair", label: "Read Repair" },
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}
                   style={{
-                    flex: 1,
-                    height: 34,
-                    padding: "0 12px",
-                    fontSize: 11,
-                    cursor: "pointer",
+                    flex: 1, height: 34, padding: "0 12px", fontSize: 11, cursor: "pointer",
                     background: rightTab === t.id ? "rgba(24,180,200,0.18)" : "transparent",
                     border: "1px solid transparent",
                     borderBottom: rightTab === t.id ? `2px solid ${ACCENT}` : "2px solid transparent",
                     borderRadius: "8px 8px 0 0",
                     color: rightTab === t.id ? ACCENT : t.id === "hints" && downNodeCount > 0 ? "#f59e0b" : "#5A7A96",
                     fontWeight: rightTab === t.id ? 700 : 500,
-                    fontFamily: "inherit",
-                    letterSpacing: 1,
-                    transition: "all 0.15s",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    pointerEvents: "auto",
-                    position: "relative",
-                    zIndex: 5
+                    fontFamily: "inherit", letterSpacing: 1, transition: "all 0.15s",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    pointerEvents: "auto", position: "relative", zIndex: 5,
                   }}>
                   {t.label}
                 </button>
@@ -1194,14 +1142,9 @@ export default function App() {
               <div style={{ ...card, marginBottom: 0 }}>
                 <div style={h3}>Output</div>
                 {output
-                  ? <div style={{
-                    fontSize: 10,
-                    maxHeight: 300,
-                    overflow: "auto",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                    color: "#EDF2F7"
-                  }}>{JSON.stringify(output, null, 2)}</div>
+                  ? <div style={{ fontSize: 10, maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", color: "#EDF2F7" }}>
+                      {JSON.stringify(output, null, 2)}
+                    </div>
                   : <span style={{ opacity: 0.5, fontSize: 11, color: "#EDF2F7" }}>No output yet.</span>}
               </div>
             )}
@@ -1223,6 +1166,10 @@ export default function App() {
             )}
           </div>
         </main>
+
+        {/* ─── Doc panel (overlay drawer from right) ────────────────── */}
+        {docOpen && <DocPanel onClose={() => setDocOpen(false)} />}
+
       </div>
 
       {capError && (

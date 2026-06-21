@@ -65,7 +65,7 @@ function MiniRing({ deadNodeIds = [], affectedKey, nodeColors = {}, allNodes = [
       ...n,
       x: CX + R * Math.cos(angle),
       y: CY + R * Math.sin(angle),
-      color: nodeColors[n.id] ?? "#20B2AA",
+      color: nodeColors[n.id] ?? "#18B4C8",
       dead: deadNodeIds.includes(n.id),
     };
   });
@@ -196,7 +196,7 @@ export default function CAPErrorModal({ error, onClose, onRetry }) {
   const affectedReplicas = affectedEntry?.replicas ?? [];
   const primaryNodeId = affectedEntry?.primaryNode ?? affectedReplicas[0]?.id ?? null;
 
-  const ACCENT = "#20B2AA";
+  const ACCENT = "#18B4C8";
 
   const overlay = {
     position: "fixed", inset: 0, zIndex: 200,
