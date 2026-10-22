@@ -55,7 +55,7 @@ cassandra-eduPlat/
 ### Run with Docker Compose
 
 ```bash
-git clone https://github.com/your-username/cassandra-eduPlat.git
+git clone https://github.com/KhalilAbboud/Cassandra-EduPlat
 cd cassandra-eduPlat
 docker compose up --build
 ```
